@@ -1,189 +1,148 @@
-# VSCode Simulator project for LVGL
+# 智慧水产养殖系统 — LVGL v9 UI
 
-[LVGL](https://github.com/lvgl/lvgl) is written mainly for microcontrollers and embedded systems, however you can run the library **on your PC** as well without any embedded hardware. The code written on PC can be simply copied when your are using an embedded system.
+基于 **LVGL v9** 的智慧水产养殖管理系统，支持 PC 模拟（SDL2）和 **GEC6818 ARM Linux** 嵌入式板卡双平台运行。
 
-This project is pre-configured for VSCode and should work work on Windows, Linux and MacOs as well. FreeRTOS is also included and can be optionally enabled to better simulate embedded system's behavior. 
+---
 
-## Get started
+## 功能模块
 
-### Install SDL and the build tools
+| 模块 | 说明 |
+|------|------|
+| 登录/注册 | 账号密码验证、注册、成功弹窗动画 |
+| 首页仪表盘 | Logo、快捷入口按钮、WiFi 网络状态指示器 |
+| 视频监控 | mplayer 视频播放、滑动切换视频、封面预览、进度条 |
+| 图片浏览 | 文件夹自动扫描、滑动切换、圆点指示器、缓存预加载 |
+| 网络通讯 | TCP Socket 客户端、收发消息、在线终端显示 |
+| 拼音输入法 | 集成 lv_100ask_pinyin_ime，支持中文拼音输入 |
 
-- **Windows (vcpkg):** `vcpkg install sdl2`  (`vcpkg` can be installed from [https://github.com/microsoft/vcpkg](https://github.com/microsoft/vcpkg)) Also install either MinGW or another compiler and `cmake`.
-- **macOS (Homebrew):** `brew install sdl2 cmake make`  
-- **Linux:**  
-  - **Debian/Ubuntu:** `sudo apt install build-essential cmake libsdl2-dev`  
-  - **Arch:** `sudo pacman -S base-devel cmake sdl2`  
-  - **Fedora:** `sudo dnf install @development-tools cmake SDL2-devel`  
-- **Manual Installation of SDL:** Download from [SDL’s website](https://github.com/libsdl-org/SDL/releases) and place headers/libraries in your project.
-- **Verify Installation:** `sdl2-config --version`, `cmake --version`, `gcc --version`, `g++ --version` (should return the installed version).  
+---
 
-### Get the PC project
+## 截图
 
-Clone the PC project and the related sub modules:
+<img src="src/page1.png" width="600" alt="登录 & 首页">
+
+*登录页面 & 首页仪表盘 — WiFi 状态指示灯（右上角，呼吸动画）*
+
+<img src="src/page2.png" width="600" alt="视频监控 & 图片浏览">
+
+*视频监控（mplayer 嵌入播放 + 滑动切换）& 图片浏览（文件夹扫描 + 缓存预加载）*
+
+<img src="src/page3.png" width="600" alt="网络通讯 & 中文输入">
+
+*网络通讯页面（Socket 收发 + 终端消息区）& 拼音中文输入键盘*
+
+---
+
+## 目录结构
+
+```
+src/ui-smart-water/
+├── ui.h / ui.c                  ← 入口，屏幕创建 + 导航
+├── preview/                     ← HTML 预览文件
+├── fonts/                       ← SIMKAI.TTF + FA6-Free-Solid-900.otf
+├── images/                      ← 图片资源（.png）
+└── pages/
+    ├── app_fonts.c/h            ← FreeType 字体加载
+    ├── app_actions.c/h          ← 业务逻辑回调（登录、视频、网络、WiFi）
+    ├── app_keyboard.c/h         ← 拼音输入法键盘
+    ├── app_popup.c/h            ← Toast 弹窗
+    ├── register-page/           ← 登录 + 注册页面
+    ├── home-page/               ← 首页仪表盘
+    ├── video-page/              ← 视频监控页面
+    ├── gallery-page/            ← 图片浏览页面
+    ├── network-page/            ← 网络通讯页面
+    └── pinyin-ime/              ← lv_100ask_pinyin_ime（适配版）
+```
+
+---
+
+## 编译运行
+
+### PC（Windows / Linux）
 
 ```bash
-git clone --recursive https://github.com/lvgl/lv_port_pc_vscode
+mkdir build && cd build
+cmake .. -DLV_USE_FREETYPE=ON
+cmake --build .
+./bin/main
 ```
 
-## Usage
+预置账号：`a` / `a`
 
-### Visual Studio Code
+### GEC6818 ARM Linux 板卡
 
-1. Be sure you have installed [SDL and the build tools](#install-sdl-and-the-build-tools)
-2. Open the project by double clicking on `simulator.code-workspace` or opening it with `File/Open Workspace from File`
-3. Install the recommended plugins
-4. Click the Run and Debug page on the left, and select `Debug LVGL demo with gdb` from the drop-down on the top. Like this:
-![image](https://github.com/lvgl/lv_port_pc_vscode/assets/7599318/f527b235-5718-4949-b5f0-bd807b3a64ba)
-5. Click the Play button or hit F5 to start debugging.
-
-#### ArchLinux User
-
-VSCode does not officially provide an installation package under Arch, you need to use the AUR manager `paru` to install it.
-The command is as follows:
+交叉编译后将 `bin/main` 和字体文件部署到板卡：
 
 ```bash
-paru -S visual-studio-code-bin
+# 部署
+cp bin/main /root/
+cp src/ui-smart-water/fonts/SIMKAI.TTF /root/
+cp src/ui-smart-water/fonts/FA6-Free-Solid-900.otf /root/
+
+# 视频文件放在 /root/videos/
+# 图片文件放在 /root/images/
+
+# 运行
+cd /root && ./main
 ```
 
-#### macOS
+> **注意**：板子编译时 `app_fonts.c` 中字体路径会自动切换为 `./SIMKAI.TTF` 和 `./FA6-Free-Solid-900.otf`。
 
-Apple's default clang does not support the `-fsanitize=leak` flag.
+---
 
-to build using the latest version of clang from homebrew, do the following:
+## 设计风格
 
-1. `brew install llvm`
+**Ocean / Aquatic 暗色主题**
 
-2. cmd+shift+p and run `Cmake: select a kit`, then `[Scan for kits]`
+| 属性 | 色值 | 用途 |
+|------|------|------|
+| 背景 | `#060E14` | 页面主背景 |
+| 卡片 | `#0A1620` | 容器、面板 |
+| 主色调 | `#00D4AA` | 按钮渐变、强调 |
+| 辅色调 | `#0288D1` | 渐变、接收消息 |
+| 金色 | `#D4A017` | 键盘按键文字 |
+| 文字主色 | `#E0E0E0` | 标题 |
+| 文字辅色 | `#9AB8B0` | 正文 |
+| 文字弱色 | `#5A7A72` | 提示 |
 
-3. then cmd+shift+p and run `Cmake: select a kit`, select the version of clang you just installed from homebrew (it should say `Using compilers C=/opt/homebrew/opt/llvm/bin/clang ...`)
+**字体**：楷体（SIMKAI.TTF）+ Font Awesome 6 图标
 
-4. reconfigure by running cmd+shift+p `Cmake: Configure`
+---
 
-5. build using [step 4 above](#visual-studio-code)
+## 页面跳转动画
 
-### FreeRTOS configuration
-To correctly configure the project, the RTOS (Real-Time Operating System) requires a significant amount of heap memory, especially when debugging an SDL (Simple DirectMedia Layer) window application. In this project, the heap memory has been experimentally set to **512 MB**.
+| 方向 | 动画 | 时长 |
+|------|------|------|
+| 进入子页面 | 左滑推入 | 350ms |
+| 返回上层 | 右滑退出 | 350ms |
+| 登录成功 | 淡入 | 400ms |
 
-```c
-#define configTOTAL_HEAP_SIZE ( ( size_t ) ( 512 * 1024 * 1024 ) )  // 512 MB Heap
+---
+
+## 网络通讯
+
+TCP 客户端直接集成在 LVGL 内，无需额外进程：
+
 ```
-This configuration ensures that the SDL window is displayed in a timely manner. If this value is reduced, it may cause significant delays in the SDL window's appearance. If the allocated heap memory is too small, the window may fail to appear altogether.
-Therefore, it is crucial to allocate sufficient heap memory to ensure smooth execution and debugging experience.
-
-### Enable FreeRTOS 
-To enable the rtos part of this project select in lv_conf.h `#define LV_USE_OS   LV_OS_NONE` to `#define LV_USE_OS  LV_OS_FREERTOS`
-Additionaly you have to enable the compilation of all FreeRTOS Files by turning on the `option(USE_FREERTOS "Enable FreeRTOS" OFF)` in the CMakeLists.txt file or
-by enabling the same flag from the command line when bootstrapping `cmake`:
-
-```bash
-cmake -B build -DUSE_FREERTOS=ON
-```
-
-### CMake
-
-This project uses CMake under the hood which can be used without Visula Studio Code too. Just type these in a Terminal when you are in the project's root folder:
-
-```bash
-mkdir build
-cd build
-cmake ..
-make -j
-```
-
-## Run demos and examples
-
-By default, the widgets demo (`lv_demo_widgets()`) will run. If you want to run a different demo or example from the LVGL library,
-simply replace the demo function call in the code with another one—such as `lv_demo_benchmark()` or `lv_example_label_1()`.
-
-```c
-int main(int argc, char **argv)
-{
-  /* ... */
-  /* Run the default demo */
-  /* To try a different demo or example, replace this with one of: */
-  /* - lv_demo_benchmark(); */
-  /* - lv_demo_stress(); */
-  /* - lv_example_label_1(); */
-  /* - etc. */
-  lv_demo_widgets(); 
-
-  while(1) {
-      /* ... */
-  }
-  return 0;
-}
+LVGL 主线程
+  ├─ 点「连接」→ socket() → connect() → pthread recv_thread
+  ├─ 点「发送」→ write(sock, msg)
+  ├─ recv_thread → lv_async_call → 消息区更新
+  └─ 点「断开」→ shutdown() → recv_thread 退出
 ```
 
-## Optional library
+可用指令（发送到服务端）：
 
-There are also FreeType and FFmpeg support. You can install these according to the followings:
+| 指令 | 说明 |
+|------|------|
+| `@list` | 查看在线用户列表 |
+| `@name 新名字` | 修改自己的名字 |
+| `@all 消息` | 广播消息给所有人 |
+| `@目标 消息` | 发送给指定用户 |
+| 普通消息 | 服务端日志记录 |
 
-### Linux
+---
 
-```bash
-# FreeType support
-wget https://kumisystems.dl.sourceforge.net/project/freetype/freetype2/2.13.2/freetype-2.13.2.tar.xz
-tar -xf freetype-2.13.2.tar.xz
-cd freetype-2.13.2
-make
-make install
-```
+## License
 
-```bash
-# FFmpeg support
-git clone https://git.ffmpeg.org/ffmpeg.git ffmpeg
-cd ffmpeg
-git checkout release/6.0
-./configure --disable-all --disable-autodetect --disable-podpages --disable-asm --enable-avcodec --enable-avformat --enable-decoders --enable-encoders --enable-demuxers --enable-parsers --enable-protocol='file' --enable-swscale --enable-zlib
-make
-sudo make install
-```
-### (RT)OS support
-Works with any OS like pthred, Windows, FreeRTOS, etc. It has build in support for FreeRTOS. 
-
-## Test
-This project is configured for [VSCode](https://code.visualstudio.com) and is tested on: 
-- Ubuntu Linux 
-- Windows WSL (Ubuntu Linux)
-
-It requires a working version of GCC, GDB and make in your path.
-
-To allow debugging inside VSCode you will also require a GDB [extension](https://marketplace.visualstudio.com/items?itemName=webfreak.debug) or other suitable debugger. All the requirements, build and debug settings have been pre-configured in the [.workspace](simulator.code-workspace) file.
-
-The project can use **SDL** but it can be easily relaced by any other built-in LVGL dirvers.
-
-## Integration with LVGL Pro
-
-This project supports integration with LVGL Pro projects for UI development.
-
-### Setup
-
-1. Configure CMake with your LVGL Pro project folder:
-
-```bash
-cmake -B build -DLVGL_PRO_PROJECT_DIR=<path-to-lvgl-pro-project>
-```
-
-Build your project:
-
-```bash
-cmake --build build
-```
-
-### Usage in Code
-
-In your main.c, include the UI header from your LVGL Pro project and replace the default demo with your screen.
-
-```c
-#include "ui.h"
-
-int main(void) {
-
-    /*Initialization code for LVGL*/
-    
-    /* Initialize the LVGL Pro UI */
-    ui_init("<path-to-lvgl-pro-project>");
-    
-    /* ... rest of your application ...*/
-}
-```
+MIT

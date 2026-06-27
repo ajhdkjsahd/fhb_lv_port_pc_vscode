@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=800, initial-scale=1.0">
+<title>网络通讯 — 预览</title>
+<style>
+  :root {
+    --bg:       #060E14;
+    --card:     #0A1620;
+    --accent:   #00D4AA;
+    --accent2:  #0288D1;
+    --text:     #E0E0E0;
+    --text2:    #9AB8B0;
+    --text3:    #5A7A72;
+    --border:   #1C2E36;
+    --input-bg: #0D1F2D;
+    --red:      #FF6B6B;
+    --gold:     #FFB800;
+    --green:    #00FF88;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background: #111;
+    display: flex; justify-content: center; align-items: center;
+    min-height: 100vh; font-family: sans-serif;
+  }
+  .screen {
+    width: 800px; height: 480px;
+    background: var(--bg);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    border-radius: 8px;
+    box-shadow: 0 0 40px rgba(0,212,170,0.15);
+    position: relative;
+  }
+
+  /* ===== TOP BAR ===== */
+  .topbar {
+    display: flex; align-items: center;
+    padding: 12px 16px;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+  .back-btn {
+    display: flex; align-items: center; gap: 6px;
+    background: var(--card); border: 1px solid var(--border);
+    color: var(--text2); font-size: 13px;
+    padding: 6px 14px; border-radius: 8px;
+    cursor: pointer; white-space: nowrap;
+  }
+  .back-btn:hover { background: #0F1F2C; }
+  .back-icon { font-size: 15px; }
+  .title {
+    font-size: 17px; color: var(--text);
+    margin-left: 8px; letter-spacing: 2px;
+  }
+  .conn-dot { width: 8px; height: 8px; border-radius: 50%; margin-left: auto; }
+  .conn-text { font-size: 12px; margin-left: 4px; }
+
+  /* ===== CONFIG ROW ===== */
+  .config-area {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 20px 12px;
+    flex-shrink: 0;
+  }
+  .config-label {
+    color: var(--text2); font-size: 14px;
+    flex-shrink: 0;
+  }
+  .config-input {
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 14px;
+    padding: 7px 12px;
+    border-radius: 8px;
+    outline: none;
+    font-family: 'Consolas', 'Monaco', monospace;
+  }
+  .config-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 8px rgba(0,212,170,0.25);
+  }
+  .ip-input   { width: 150px; }
+  .port-input { width: 80px; }
+
+  .btn {
+    border: none; border-radius: 8px;
+    padding: 8px 20px; font-size: 13px;
+    cursor: pointer; font-weight: bold;
+    white-space: nowrap;
+    transition: opacity 0.15s;
+  }
+  .btn:hover { opacity: 0.85; }
+  .btn-connect {
+    background: linear-gradient(180deg, #00D4AA, #0288D1);
+    color: #fff;
+    box-shadow: 0 4px 12px rgba(0,212,170,0.3);
+  }
+  .btn-disconnect {
+    background: var(--card);
+    border: 1px solid var(--red);
+    color: var(--red);
+  }
+
+  /* ===== MESSAGE DISPLAY ===== */
+  .msg-wrapper {
+    margin: 0 20px;
+    flex: 1;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+  .msg-header {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .msg-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .msg-title { color: var(--text3); font-size: 12px; }
+  .msg-area {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px 14px;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 12px;
+    line-height: 1.7;
+    color: var(--text2);
+    scroll-behavior: smooth;
+  }
+  .msg-area::-webkit-scrollbar { width: 4px; }
+  .msg-area::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  .msg-line { white-space: pre-wrap; word-break: break-all; }
+  .msg-line .time  { color: var(--text3); }
+  .msg-line .send  { color: var(--accent); }
+  .msg-line .recv  { color: var(--accent2); }
+  .msg-line .info  { color: var(--text2); }
+  .msg-line .error { color: var(--red); }
+
+  /* ===== INPUT ROW ===== */
+  .input-area {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 20px;
+    flex-shrink: 0;
+  }
+  .msg-input {
+    flex: 1;
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 14px;
+    padding: 9px 14px;
+    border-radius: 8px;
+    outline: none;
+    font-family: 'Consolas', 'Monaco', monospace;
+  }
+  .msg-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 8px rgba(0,212,170,0.25);
+  }
+  .msg-input:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .btn-send {
+    background: linear-gradient(180deg, #00D4AA, #0288D1);
+    color: #fff;
+    box-shadow: 0 4px 12px rgba(0,212,170,0.3);
+  }
+  .btn-send:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+    filter: grayscale(0.5);
+  }
+  .btn-clear {
+    background: var(--card);
+    border: 1px solid var(--border);
+    color: var(--text2);
+  }
+
+  /* ===== ON-SCREEN KEYBOARD ===== */
+  .keyboard {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    background: #0B1A24;
+    display: flex; flex-direction: column;
+    padding: 4px 6px 6px;
+    gap: 4px;
+    transform: translateY(100%);
+    transition: transform 0.25s ease;
+    box-shadow: 0 -4px 20px rgba(0,0,0,0.6);
+    z-index: 10;
+  }
+  .keyboard.show { transform: translateY(0); }
+  .kb-display {
+    display: flex; align-items: center;
+    background: #0A1620;
+    padding: 6px 14px;
+    gap: 8px;
+    border-radius: 6px;
+    min-height: 28px;
+  }
+  .kb-display-label { color: #5A7A72; font-size: 12px; }
+  .kb-display-text { color: #DCE7E2; font-size: 14px; flex: 1; }
+  .kb-display-cursor { width: 2px; height: 18px; background: #00D4AA; animation: kb-blink 0.5s infinite; }
+  @keyframes kb-blink { 0%,100%{opacity:1} 50%{opacity:0} }
+  .kb-row { display: flex; gap: 4px; }
+  .kb-key {
+    flex: 1;
+    background: #15293A;
+    color: #D4A017;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 0;
+    font-size: 13px;
+    cursor: pointer;
+    text-align: center;
+    min-width: 0;
+    box-shadow: 0 2px 0 #0c1a26;
+    transition: background 0.1s;
+  }
+  .kb-key:active { background: #1D3A52; }
+  .kb-key.wide { flex: 1.6; }
+  .kb-key.wider { flex: 2.4; }
+  .kb-key.space  { flex: 5; }
+  .kb-key.hide   { background: #1A1A24; color: #FF6B6B; }
+  .kb-key.done   { background: #0A1620; color: #00D4AA; border: 1px solid #00D4AA; }
+
+  .empty-hint {
+    text-align: center; color: var(--text3); font-size: 13px;
+    padding: 40px 0;
+  }
+</style>
+</head>
+<body>
+
+<div class="screen">
+  <!-- ===== TOP BAR ===== -->
+  <div class="topbar">
+    <div class="back-btn" onclick="addMsg('info','返回首页')">
+      <span class="back-icon">←</span> 返回首页
+    </div>
+    <span class="title">🌐 网络通讯</span>
+    <div class="conn-dot" id="statusDot" style="background:var(--red)"></div>
+    <span class="conn-text" id="statusText" style="color:var(--red)">未连接</span>
+  </div>
+
+  <!-- ===== CONFIG ROW: IP + Port + 连接按钮 ===== -->
+  <div class="config-area">
+    <span class="config-label">IP地址</span>
+    <input class="config-input ip-input" id="ipInput" type="text"
+           placeholder="192.168.1.100" value="192.168.1.100">
+    <span class="config-label">端口号</span>
+    <input class="config-input port-input" id="portInput" type="text"
+           placeholder="8080" value="8080">
+    <button class="btn btn-connect" id="connBtn" onclick="toggleConnect()">
+      🔗 连接
+    </button>
+  </div>
+
+  <!-- ===== MESSAGE DISPLAY ===== -->
+  <div class="msg-wrapper">
+    <div class="msg-header">
+      <div class="msg-dot" style="background:var(--green)"></div>
+      <span class="msg-title">终端消息</span>
+    </div>
+    <div class="msg-area" id="msgArea">
+      <div class="empty-hint" id="emptyHint">暂无消息</div>
+    </div>
+  </div>
+
+  <!-- ===== INPUT AREA ===== -->
+  <div class="input-area">
+    <input class="msg-input" id="msgInput" type="text"
+           placeholder="输入要发送的消息内容..." maxlength="512" disabled>
+    <button class="btn btn-send" id="sendBtn" onclick="sendMsg()" disabled>
+      📤 发送
+    </button>
+    <button class="btn btn-clear" onclick="clearMsgs()">
+      🗑 清除
+    </button>
+  </div>
+
+  <!-- ===== ON-SCREEN KEYBOARD ===== -->
+  <div class="keyboard" id="keyboard">
+    <div class="kb-display">
+      <span class="kb-display-label" id="kbFieldLabel"></span>
+      <span class="kb-display-text" id="kbDisplayText"></span>
+      <div class="kb-display-cursor"></div>
+    </div>
+    <div class="kb-row">
+      <button class="kb-key" onclick="kbType('q')">q</button>
+      <button class="kb-key" onclick="kbType('w')">w</button>
+      <button class="kb-key" onclick="kbType('e')">e</button>
+      <button class="kb-key" onclick="kbType('r')">r</button>
+      <button class="kb-key" onclick="kbType('t')">t</button>
+      <button class="kb-key" onclick="kbType('y')">y</button>
+      <button class="kb-key" onclick="kbType('u')">u</button>
+      <button class="kb-key" onclick="kbType('i')">i</button>
+      <button class="kb-key" onclick="kbType('o')">o</button>
+      <button class="kb-key" onclick="kbType('p')">p</button>
+    </div>
+    <div class="kb-row">
+      <button class="kb-key" onclick="kbType('a')">a</button>
+      <button class="kb-key" onclick="kbType('s')">s</button>
+      <button class="kb-key" onclick="kbType('d')">d</button>
+      <button class="kb-key" onclick="kbType('f')">f</button>
+      <button class="kb-key" onclick="kbType('g')">g</button>
+      <button class="kb-key" onclick="kbType('h')">h</button>
+      <button class="kb-key" onclick="kbType('j')">j</button>
+      <button class="kb-key" onclick="kbType('k')">k</button>
+      <button class="kb-key" onclick="kbType('l')">l</button>
+    </div>
+    <div class="kb-row">
+      <button class="kb-key wider" onclick="kbType('@')">@/.</button>
+      <button class="kb-key" onclick="kbType('z')">z</button>
+      <button class="kb-key" onclick="kbType('x')">x</button>
+      <button class="kb-key" onclick="kbType('c')">c</button>
+      <button class="kb-key" onclick="kbType('v')">v</button>
+      <button class="kb-key" onclick="kbType('b')">b</button>
+      <button class="kb-key" onclick="kbType('n')">n</button>
+      <button class="kb-key" onclick="kbType('m')">m</button>
+      <button class="kb-key wider" onclick="kbBackspace()">⌫</button>
+    </div>
+    <div class="kb-row">
+      <button class="kb-key" onclick="kbType('1')">1</button>
+      <button class="kb-key" onclick="kbType('2')">2</button>
+      <button class="kb-key" onclick="kbType('3')">3</button>
+      <button class="kb-key" onclick="kbType('4')">4</button>
+      <button class="kb-key" onclick="kbType('5')">5</button>
+      <button class="kb-key" onclick="kbType('6')">6</button>
+      <button class="kb-key" onclick="kbType('7')">7</button>
+      <button class="kb-key" onclick="kbType('8')">8</button>
+      <button class="kb-key" onclick="kbType('9')">9</button>
+      <button class="kb-key" onclick="kbType('0')">0</button>
+    </div>
+    <div class="kb-row">
+      <button class="kb-key" onclick="kbType(':')">:</button>
+      <button class="kb-key" onclick="kbType('.')">.</button>
+      <button class="kb-key space" onclick="kbType(' ')">⎵</button>
+      <button class="kb-key done" onclick="kbHide()">✓ 完成</button>
+      <button class="kb-key hide" onclick="kbHide()">✕ 关闭</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const msgArea    = document.getElementById('msgArea');
+  const emptyHint  = document.getElementById('emptyHint');
+  const msgInput   = document.getElementById('msgInput');
+  const sendBtn    = document.getElementById('sendBtn');
+  const connBtn    = document.getElementById('connBtn');
+  const statusDot  = document.getElementById('statusDot');
+  const statusText = document.getElementById('statusText');
+  const keyboard   = document.getElementById('keyboard');
+  const kbDisplay  = document.getElementById('kbDisplayText');
+  const kbLabel    = document.getElementById('kbFieldLabel');
+
+  let connected  = false;
+  let kbTarget   = null;   /* currently focused input */
+  let kbTargetLabel = '';  /* field label for display row */
+
+  /* ===== KEYBOARD ===== */
+
+  function kbShow(inputEl, labelText) {
+    if (!inputEl || inputEl.disabled) return;
+    kbTarget = inputEl;
+    kbTargetLabel = labelText || '';
+    kbLabel.textContent = kbTargetLabel ? kbTargetLabel + ': ' : '';
+    kbDisplay.textContent = kbTarget.value || '';
+    keyboard.classList.add('show');
+  }
+
+  function kbHide() {
+    keyboard.classList.remove('show');
+    kbTarget = null;
+  }
+
+  function kbType(ch) {
+    if (!kbTarget) return;
+    kbTarget.value += ch;
+    kbDisplay.textContent = kbTarget.value;
+    /* trigger input event so any listeners fire */
+    kbTarget.dispatchEvent(new Event('input', {bubbles: true}));
+  }
+
+  function kbBackspace() {
+    if (!kbTarget) return;
+    kbTarget.value = kbTarget.value.slice(0, -1);
+    kbDisplay.textContent = kbTarget.value;
+  }
+
+  /* Attach kbShow to all text inputs */
+  document.querySelectorAll('.config-input, .msg-input').forEach(el => {
+    el.addEventListener('focus', function(e) {
+      e.preventDefault();  /* prevent native OSK on mobile */
+      let label = '';
+      if (el.id === 'ipInput')   label = 'IP地址';
+      else if (el.id === 'portInput') label = '端口号';
+      else if (el.id === 'msgInput')  label = '发送消息';
+      kbShow(el, label);
+    });
+    /* read-only to prevent caret / native keyboard */
+    el.setAttribute('readonly', 'readonly');
+  });
+
+  /* Hide keyboard when clicking outside inputs */
+  document.querySelector('.screen').addEventListener('click', function(e) {
+    if (e.target.tagName === 'INPUT') return;
+    if (e.target.closest('.keyboard')) return;
+    kbHide();
+  });
+
+  /* ===== MESSAGES ===== */
+
+  function now() {
+    return new Date().toTimeString().slice(0,8);
+  }
+
+  function addMsg(type, text) {
+    if (emptyHint) emptyHint.remove();
+    const div = document.createElement('div');
+    div.className = 'msg-line';
+    let cls = 'info';
+    if (type === 'send') cls = 'send';
+    else if (type === 'recv') cls = 'recv';
+    else if (type === 'error') cls = 'error';
+    div.innerHTML = `<span class="time">[${now()}]</span> <span class="${cls}">${text}</span>`;
+    msgArea.appendChild(div);
+    msgArea.scrollTop = msgArea.scrollHeight;
+  }
+
+  /* ===== CONNECT / DISCONNECT ===== */
+
+  function toggleConnect() {
+    const ip   = document.getElementById('ipInput').value.trim();
+    const port = document.getElementById('portInput').value.trim();
+    if (!ip || !port) {
+      addMsg('error', '请填写 IP 地址和端口号');
+      return;
+    }
+
+    if (!connected) {
+      connected = true;
+      kbHide();
+      addMsg('info', `正在连接到 ${ip}:${port} …`);
+      setTimeout(() => {
+        addMsg('info', `✅ 已成功连接到 ${ip}:${port}`);
+        statusDot.style.background = 'var(--green)';
+        statusText.textContent = '已连接';
+        statusText.style.color = 'var(--green)';
+        connBtn.innerHTML = '🔌 断开';
+        connBtn.className = 'btn btn-disconnect';
+        msgInput.disabled = false;
+        msgInput.removeAttribute('readonly');
+        msgInput.setAttribute('readonly', 'readonly');
+        sendBtn.disabled = false;
+      }, 400);
+    } else {
+      connected = false;
+      kbHide();
+      addMsg('info', `🔌 已断开与 ${ip}:${port} 的连接`);
+      statusDot.style.background = 'var(--red)';
+      statusText.textContent = '未连接';
+      statusText.style.color = 'var(--red)';
+      connBtn.innerHTML = '🔗 连接';
+      connBtn.className = 'btn btn-connect';
+      msgInput.disabled = true;
+      sendBtn.disabled = true;
+    }
+  }
+
+  function sendMsg() {
+    if (!connected) return;
+    const msg = msgInput.value.trim();
+    if (!msg) return;
+
+    addMsg('send', `发送: ${msg}  →  ${document.getElementById('ipInput').value}:${document.getElementById('portInput').value}`);
+
+    setTimeout(() => {
+      addMsg('recv', `收到: ${msg}`);
+    }, 500);
+
+    msgInput.value = '';
+    kbDisplay.textContent = '';
+  }
+
+  function clearMsgs() {
+    msgArea.innerHTML = '<div class="empty-hint" id="emptyHint">暂无消息</div>';
+  }
+
+  /* ===== INIT ===== */
+  setTimeout(() => addMsg('info', '系统就绪，请填写 IP 和端口后点击连接'), 300);
+</script>
+
+</body>
+</html>

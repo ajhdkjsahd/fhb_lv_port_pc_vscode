@@ -45,7 +45,7 @@ option(LV_USE_DRAW_SDL "Use SDL draw unit" OFF)
 option(LV_USE_LIBPNG "Use libpng to decode PNG" OFF)
 option(LV_USE_LIBJPEG_TURBO "Use libjpeg turbo to decode JPEG" OFF)
 option(LV_USE_FFMPEG "Use libffmpeg to display video using lv_ffmpeg" OFF)
-option(LV_USE_FREETYPE "Use freetype library" OFF)
+option(LV_USE_FREETYPE "Use freetype library" ON)
 
 # Set C and C++ standards
 set(CMAKE_C_STANDARD 99)
@@ -72,6 +72,12 @@ target_include_directories(lvgl PUBLIC ${PROJECT_SOURCE_DIR} ${SDL2_INCLUDE_DIRS
 set(MAIN_SOURCES src/mouse_cursor_icon.c src/hal/hal.c)
 set(MAIN_LIBS lvgl lvgl::examples lvgl::demos lvgl::thorvg ${SDL2_LIBRARIES})
 
+# UI page sources
+file(GLOB LV_PAGE_SRC src/ui/pages/*.c)
+file(GLOB LV_FONT_SRC src/ui/fonts/*.c)
+file(GLOB_RECURSE LV_SMART_WATER_SRC src/ui-smart-water/pages/*.c)
+list(APPEND LV_SMART_WATER_SRC src/ui-smart-water/ui.c)
+
 # Create the main executable, depending on the FreeRTOS option
 if(USE_FREERTOS)
     list(APPEND MAIN_SOURCES src/freertos_main.c src/freertos/freertos_posix_port.c ${FREERTOS_SOURCES})
@@ -79,6 +85,8 @@ if(USE_FREERTOS)
 else()
     list(APPEND MAIN_SOURCES src/main.c)
 endif()
+
+list(APPEND MAIN_SOURCES ${LV_PAGE_SRC} ${LV_FONT_SRC} ${LV_SMART_WATER_SRC})
 
 
 if(NOT MSVC)

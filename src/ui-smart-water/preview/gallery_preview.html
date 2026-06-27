@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Smart Water — 首页 & 图片浏览页 预览</title>
+<style>
+  :root {
+    --bg: #060E14;
+    --card: #0A1620;
+    --card-hover: #0E1E2C;
+    --accent: #00D4AA;
+    --accent2: #0288D1;
+    --danger: #FF6B6B;
+    --text: #E0E0E0;
+    --text2: #9AB8B0;
+    --text3: #5A7A72;
+    --border: #1C2E36;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+    background: #0D1117;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 20px; gap: 16px; min-height: 100vh;
+  }
+  .page-row {
+    display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; justify-content: center;
+  }
+  .page-col {
+    display: flex; flex-direction: column; align-items: center; gap: 12px;
+  }
+  .page-label {
+    color: var(--text); font-size: 14px; font-weight: 600; text-align: center;
+  }
+  .screen {
+    width: 800px; height: 480px; border-radius: 16px;
+    overflow: hidden; position: relative;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  }
+
+  /* ========== HOME PAGE ========== */
+  .home-bg {
+    width:100%; height:100%;
+    background: linear-gradient(180deg, #060E14 0%, #0A1620 60%, #060E14 100%);
+    display:flex; flex-direction:column; align-items:center;
+  }
+  .home-header {
+    display:flex; flex-direction:column; align-items:center;
+    padding-top:36px; padding-bottom:12px; gap:6px;
+  }
+  .logo-circle {
+    width:56px; height:56px; border-radius:50%;
+    background: linear-gradient(180deg, #00D4AA 0%, #0288D1 100%);
+    box-shadow: 0 0 24px rgba(0,212,170,0.4);
+    display:flex; align-items:center; justify-content:center;
+    font-size:28px; color:#fff;
+  }
+  .home-title { font-size:22px; color:#E6F2EE; font-weight:600; margin-top:4px; }
+  .home-sub { font-size:12px; color:var(--text3); letter-spacing:3px; }
+  .home-body {
+    flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:20px; width:100%;
+  }
+  .welcome-card {
+    background:var(--card); border:1px solid var(--border);
+    border-radius:16px; padding:28px 48px;
+    display:flex; flex-direction:column; align-items:center; gap:10px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+  }
+  .welcome-icon { font-size:42px; }
+  .welcome-text { color:var(--text); font-size:18px; }
+  .welcome-sub { color:var(--text3); font-size:13px; }
+
+  .home-btn-row {
+    display:flex; gap:16px;
+  }
+  .home-nav-btn {
+    padding:13px 40px; border-radius:12px;
+    background: linear-gradient(180deg, #00D4AA 0%, #0288D1 100%);
+    border:none; color:#fff; font-size:15px; font-weight:600;
+    cursor:pointer; box-shadow: 0 4px 20px rgba(0,212,170,0.35);
+    display:flex; align-items:center; gap:10px;
+    transition: transform 0.15s, box-shadow 0.15s;
+    white-space: nowrap;
+  }
+  .home-nav-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 28px rgba(0,212,170,0.5); }
+  .home-nav-btn:active { transform: scale(0.97); }
+  .home-footer {
+    padding:10px 0 14px; color:var(--text3); font-size:11px;
+    border-top:1px solid var(--border); width:100%; text-align:center;
+  }
+
+  /* ========== GALLERY PAGE ========== */
+  .gallery-bg {
+    width:100%; height:100%;
+    background: linear-gradient(180deg, #060E14 0%, #0A1620 50%, #060E14 100%);
+    display:flex; flex-direction:column;
+  }
+  .gallery-topbar {
+    display:flex; align-items:center; justify-content:space-between;
+    padding:10px 16px; flex-shrink:0;
+  }
+  .back-btn {
+    display:flex; align-items:center; gap:6px;
+    background:var(--card); border:1px solid var(--border);
+    color:var(--text2); padding:7px 14px; border-radius:8px;
+    cursor:pointer; font-size:13px; transition: all 0.15s;
+  }
+  .back-btn:hover { background:var(--card-hover); color:var(--text); }
+  .gallery-title { color:var(--text); font-size:16px; font-weight:600; }
+  .gallery-counter {
+    color:var(--accent); font-size:13px; font-weight:600;
+    background:rgba(0,212,170,0.08); border:1px solid rgba(0,212,170,0.15);
+    padding:4px 12px; border-radius:20px;
+  }
+
+  /* Image display area */
+  .gallery-main {
+    flex:1; display:flex; align-items:center; justify-content:center;
+    padding:10px 24px; min-height:0; position:relative;
+  }
+  .image-stage {
+    width:100%; height:100%;
+    background:#000; border-radius:16px;
+    border:2px solid var(--border);
+    display:flex; align-items:center; justify-content:center;
+    position:relative; overflow:hidden;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.35);
+    cursor: grab;
+    user-select: none;
+  }
+  .image-stage:active { cursor: grabbing; }
+  .image-stage.swiping { transition: none !important; }
+
+  /* ===== Placeholder images ===== */
+  .img-card {
+    position:absolute; top:0;left:0;
+    width:100%; height:100%;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:8px;
+    transition: transform 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
+  .img-placeholder {
+    width:85%; height:72%;
+    border-radius:12px;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:8px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.3);
+    position:relative; overflow:hidden;
+  }
+  .img-placeholder .img-icon { font-size:64px; opacity:0.6; }
+  .img-placeholder .img-label {
+    font-size:15px; color:rgba(255,255,255,0.85); font-weight:600;
+    letter-spacing:1px;
+  }
+  .img-placeholder .img-desc {
+    font-size:11px; color:rgba(255,255,255,0.5);
+  }
+  .img-badge {
+    position:absolute; top:8px; right:12px;
+    background:rgba(0,0,0,0.4); color:rgba(255,255,255,0.7);
+    padding:2px 10px; border-radius:10px; font-size:10px;
+    backdrop-filter: blur(6px);
+  }
+
+  /* Empty state */
+  .empty-state {
+    display:flex; flex-direction:column; align-items:center; gap:12px;
+    color:var(--text3);
+  }
+  .empty-state .empty-icon { font-size:56px; }
+  .empty-state .empty-text { font-size:16px; }
+
+  /* Swipe hint */
+  .swipe-hint {
+    position:absolute; bottom:14px; left:50%; transform:translateX(-50%);
+    color:var(--text3); font-size:10px;
+    display:flex; align-items:center; gap:8px;
+    opacity:0; pointer-events:none; transition: opacity 0.4s;
+  }
+  .swipe-hint.show { opacity:0.7; }
+  .swipe-hint .arrow-icon { font-size:14px; color:var(--accent); }
+
+  /* ===== DOTS INDICATOR ===== */
+  .dots-row {
+    display:flex; align-items:center; justify-content:center;
+    gap:8px; padding:6px 0 8px; flex-shrink:0;
+    min-height: 22px;
+  }
+  .dot {
+    width:8px; height:8px; border-radius:50%;
+    background:var(--border);
+    transition: all 0.3s;
+    cursor:pointer;
+  }
+  .dot.active {
+    width:24px; border-radius:4px;
+    background:var(--accent);
+    box-shadow: 0 0 8px rgba(0,212,170,0.5);
+  }
+
+
+  /* Flow arrows */
+  .flow-arrow-col {
+    display:flex; flex-direction:column; align-items:center; gap:4px;
+    color: var(--accent); font-size: 12px; padding: 0 8px;
+  }
+  .flow-arrow-col .arrow { font-size: 28px; }
+</style>
+</head>
+<body>
+
+<h2 style="color:#E0E0E0;font-size:16px;text-align:center;">
+  智慧水产养殖系统 — 图片浏览功能 预览 (800×480)
+</h2>
+<div style="color:#5A7A72;font-size:12px;text-align:center;margin-bottom:4px;">
+  首页点击「🖼 图片浏览」→ 跳转图片轮播页 → 左右滑动切换 → 返回首页
+</div>
+
+<!-- Image count selector for preview only -->
+<div style="display:flex;align-items:center;gap:12px;color:#9AB8B0;font-size:13px;margin-bottom:8px;">
+  <span>预览模式：模拟图片数量</span>
+  <button onclick="setImageCount(0)" style="padding:4px 12px;border-radius:6px;background:#0A1620;border:1px solid #1C2E36;color:#E0E0E0;cursor:pointer;">0 张（空状态）</button>
+  <button onclick="setImageCount(1)" style="padding:4px 12px;border-radius:6px;background:#0A1620;border:1px solid #1C2E36;color:#E0E0E0;cursor:pointer;">1 张</button>
+  <button onclick="setImageCount(3)" style="padding:4px 12px;border-radius:6px;background:#00D4AA;border:none;color:#000;cursor:pointer;">3 张（真实图片）</button>
+</div>
+
+<div class="page-row">
+  <!-- HOME PAGE -->
+  <div class="page-col">
+    <div class="page-label">🏠 首页（新增"图片浏览"按钮）</div>
+    <div class="screen">
+      <div class="home-bg">
+        <div class="home-header">
+          <div class="logo-circle">🐟</div>
+          <div class="home-title">智能水产养殖系统</div>
+          <div class="home-sub">AQUACULTURE &nbsp; CONTROL</div>
+        </div>
+        <div class="home-body">
+          <div class="welcome-card">
+            <div class="welcome-icon">🌊</div>
+            <div class="welcome-text">欢迎使用智慧水产管理系统</div>
+            <div class="welcome-sub">实时监控 · 智能预警 · 远程控制</div>
+          </div>
+          <div class="home-btn-row">
+            <button class="home-nav-btn">▶ 视频监控</button>
+            <button class="home-nav-btn gallery-btn">🖼 图片浏览</button>
+          </div>
+        </div>
+        <div class="home-footer">Smart Water Aquaculture System v1.0</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ARROW -->
+  <div class="flow-arrow-col">
+    <div class="arrow">→</div>
+    <div>点击</div>
+    <div>图片浏览</div>
+  </div>
+
+  <!-- GALLERY PAGE -->
+  <div class="page-col">
+    <div class="page-label" id="galleryLabel">🖼 图片浏览页（当前: 6 张图片）</div>
+    <div class="screen">
+      <div class="gallery-bg">
+        <div class="gallery-topbar">
+          <button class="back-btn">← 返回首页</button>
+          <div class="gallery-title">图片浏览</div>
+          <div class="gallery-counter" id="counter">1 / 6</div>
+        </div>
+
+        <div class="gallery-main" id="galleryMain">
+          <div class="image-stage" id="imageStage">
+            <!-- JS-managed -->
+          </div>
+          <div class="swipe-hint show" id="swipeHint">
+            <span class="arrow-icon">◀</span> 滑动切换 <span class="arrow-icon">▶</span>
+          </div>
+        </div>
+
+        <div class="dots-row" id="dotsRow"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ========== GALLERY DATA — actual images from src/ui-smart-water/images/ ==========
+const REAL_IMAGES = [
+  '1.png',
+  '2.png',
+  '3.png',
+];
+
+let images = REAL_IMAGES;  // currently active image set
+let currentIndex = 0;
+
+// Touch/swipe state
+let touchStartX = 0, touchStartY = 0;
+let isDragging = false, dragOffsetX = 0;
+
+const stage = document.getElementById('imageStage');
+const counter = document.getElementById('counter');
+const dotsRow = document.getElementById('dotsRow');
+const swipeHint = document.getElementById('swipeHint');
+
+function renderAll() {
+  stage.innerHTML = '';
+
+  // Empty state
+  if (images.length === 0) {
+    stage.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">🖼</div>
+        <div class="empty-text">暂无图片</div>
+      </div>
+    `;
+    counter.textContent = '0 / 0';
+    dotsRow.innerHTML = '';
+    swipeHint.classList.remove('show');
+    return;
+  }
+
+  swipeHint.classList.add('show');
+
+  // Render cards with real <img> tags
+  for (let i = 0; i < images.length; i++) {
+    const card = document.createElement('div');
+    card.className = 'img-card';
+    const offset = i - currentIndex;
+    card.style.transform = `translateX(${offset * 100}%)`;
+    card.style.opacity = (Math.abs(offset) <= 1) ? '1' : '0';
+    card.style.pointerEvents = (offset === 0) ? 'auto' : 'none';
+    card.style.padding = '20px';
+    card.style.display = 'flex';
+    card.style.alignItems = 'center';
+    card.style.justifyContent = 'center';
+
+    card.innerHTML = `
+      <img src="/images/${images[i]}" alt="image ${i+1}"
+           style="max-width:92%; max-height:92%; object-fit:contain;
+                  border-radius:10px; pointer-events:none;" />
+    `;
+    stage.appendChild(card);
+  }
+
+  // Counter
+  counter.textContent = `${currentIndex+1} / ${images.length}`;
+
+  // Dots — one per image
+  dotsRow.innerHTML = '';
+  for (let i = 0; i < images.length; i++) {
+    const dot = document.createElement('div');
+    dot.className = 'dot' + (i === currentIndex ? ' active' : '');
+    dot.onclick = () => goToImage(i);
+    dotsRow.appendChild(dot);
+  }
+
+}
+
+function goToImage(index) {
+  if (index < 0 || index >= images.length || index === currentIndex) return;
+  currentIndex = index;
+  renderAll();
+}
+
+function nextImage() {
+  if (images.length === 0) return;
+  goToImage((currentIndex + 1) % images.length);
+}
+
+function prevImage() {
+  if (images.length === 0) return;
+  goToImage((currentIndex - 1 + images.length) % images.length);
+}
+
+// ===== SWIPE / DRAG =====
+stage.addEventListener('mousedown', (e) => {
+  if (images.length === 0) return;
+  isDragging = true;
+  touchStartX = e.clientX; touchStartY = e.clientY;
+  dragOffsetX = 0;
+  stage.style.cursor = 'grabbing';
+  stage.classList.add('swiping');
+  swipeHint.classList.remove('show');
+});
+
+stage.addEventListener('mousemove', (e) => {
+  if (!isDragging) return;
+  dragOffsetX = e.clientX - touchStartX;
+  const cards = stage.querySelectorAll('.img-card');
+  cards.forEach(card => {
+    const m = card.style.transform.match(/-?[\d.]+/);
+    const offset = m ? parseFloat(m[0]) : 0;
+    const pct = (dragOffsetX / stage.offsetWidth) * 100;
+    card.style.transform = `translateX(${offset * 100 + pct}%)`;
+  });
+});
+
+stage.addEventListener('mouseup', (e) => {
+  if (!isDragging) return;
+  isDragging = false;
+  stage.style.cursor = 'grab';
+  stage.classList.remove('swiping');
+
+  const dx = e.clientX - touchStartX;
+  const dy = e.clientY - touchStartY;
+  if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 50) {
+    if (dx > 40) prevImage(); else if (dx < -40) nextImage();
+  }
+  renderAll();
+});
+
+stage.addEventListener('mouseleave', () => {
+  if (isDragging) {
+    isDragging = false;
+    stage.style.cursor = 'grab';
+    stage.classList.remove('swiping');
+    renderAll();
+  }
+});
+
+// Touch
+stage.addEventListener('touchstart', (e) => {
+  if (images.length === 0) return;
+  isDragging = true;
+  touchStartX = e.touches[0].clientX; touchStartY = e.touches[0].clientY;
+  dragOffsetX = 0;
+  stage.classList.add('swiping');
+  swipeHint.classList.remove('show');
+}, {passive:true});
+
+stage.addEventListener('touchmove', (e) => {
+  if (!isDragging) return;
+  dragOffsetX = e.touches[0].clientX - touchStartX;
+  const cards = stage.querySelectorAll('.img-card');
+  cards.forEach(card => {
+    const m = card.style.transform.match(/-?[\d.]+/);
+    const offset = m ? parseFloat(m[0]) : 0;
+    const pct = (dragOffsetX / stage.offsetWidth) * 100;
+    card.style.transform = `translateX(${offset * 100 + pct}%)`;
+  });
+}, {passive:true});
+
+stage.addEventListener('touchend', () => {
+  if (!isDragging) return;
+  isDragging = false;
+  stage.classList.remove('swiping');
+  const dx = dragOffsetX;
+  if (Math.abs(dx) > 50) {
+    if (dx > 40) prevImage(); else if (dx < -40) nextImage();
+  }
+  renderAll();
+});
+
+// ===== DEMO: switch image count =====
+function setImageCount(n) {
+  images = REAL_IMAGES.slice(0, n);
+  currentIndex = 0;
+  renderAll();
+  document.getElementById('galleryLabel').textContent =
+    '🖼 图片浏览页（当前: ' + n + ' 张图片）';
+}
+
+// Init with all 3 real images
+setImageCount(REAL_IMAGES.length);
+</script>
+
+</body>
+</html>
