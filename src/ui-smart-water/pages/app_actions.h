@@ -55,6 +55,12 @@ void app_action_network_connect(const char * ip, const char * port);
 void app_action_network_disconnect(void);
 void app_action_network_send(const char * message);
 
+/* ---- AI Chat (Ollama) ---- */
+void app_action_ai_init(void);
+void app_action_ai_set_screen(lv_obj_t * screen);
+void app_action_ai_send(const char * message);
+void app_action_ai_stop(void);
+
 #ifdef __cplusplus
 }
 #endif

@@ -25,6 +25,7 @@ typedef struct {
     home_nav_to_video_cb_t    nav_to_video_cb;
     home_nav_to_gallery_cb_t  nav_to_gallery_cb;
     home_nav_to_network_cb_t  nav_to_network_cb;
+    home_nav_to_ai_chat_cb_t  nav_to_ai_chat_cb;
 } home_page_ctx_t;
 
 /**********************
@@ -33,6 +34,7 @@ typedef struct {
 static void on_video_btn_click(lv_event_t * e);
 static void on_gallery_btn_click(lv_event_t * e);
 static void on_network_btn_click(lv_event_t * e);
+static void on_ai_chat_btn_click(lv_event_t * e);
 static void on_page_delete(lv_event_t * e);
 static void wifi_check_timer_cb(lv_timer_t * timer);
 static void wifi_glow_anim_cb(void * var, int32_t v);
@@ -42,7 +44,8 @@ static void wifi_glow_anim_cb(void * var, int32_t v);
  **********************/
 lv_obj_t * home_page_create(home_nav_to_video_cb_t    nav_to_video_cb,
                             home_nav_to_gallery_cb_t  nav_to_gallery_cb,
-                            home_nav_to_network_cb_t  nav_to_network_cb)
+                            home_nav_to_network_cb_t  nav_to_network_cb,
+                            home_nav_to_ai_chat_cb_t  nav_to_ai_chat_cb)
 {
     home_page_ctx_t * ctx = lv_malloc(sizeof(home_page_ctx_t));
     if(ctx == NULL) return NULL;
@@ -50,6 +53,7 @@ lv_obj_t * home_page_create(home_nav_to_video_cb_t    nav_to_video_cb,
     ctx->nav_to_video_cb    = nav_to_video_cb;
     ctx->nav_to_gallery_cb  = nav_to_gallery_cb;
     ctx->nav_to_network_cb  = nav_to_network_cb;
+    ctx->nav_to_ai_chat_cb  = nav_to_ai_chat_cb;
 
     /* ===== SCREEN ===== */
     lv_obj_t * screen = lv_obj_create(NULL);
@@ -295,6 +299,37 @@ lv_obj_t * home_page_create(home_nav_to_video_cb_t    nav_to_video_cb,
     lv_obj_set_style_text_font(network_text, app_font_kaiti_18(), 0);
     lv_obj_set_style_text_color(network_text, lv_color_white(), 0);
 
+    /* AI Chat button */
+    lv_obj_t * ai_btn = lv_button_create(btn_row);
+    lv_obj_set_size(ai_btn, LV_SIZE_CONTENT, 48);
+    lv_obj_set_style_pad_hor(ai_btn, 36, 0);
+    lv_obj_set_style_radius(ai_btn, 12, 0);
+    lv_obj_set_style_bg_color(ai_btn, lv_color_hex(0x00D4AA), 0);
+    lv_obj_set_style_bg_grad_color(ai_btn, lv_color_hex(0x0288D1), 0);
+    lv_obj_set_style_bg_grad_dir(ai_btn, LV_GRAD_DIR_VER, 0);
+    lv_obj_set_style_border_width(ai_btn, 0, 0);
+    lv_obj_set_style_shadow_width(ai_btn, 12, 0);
+    lv_obj_set_style_shadow_color(ai_btn, lv_color_hex(0x00D4AA), 0);
+    lv_obj_set_style_shadow_opa(ai_btn, LV_OPA_30, 0);
+    lv_obj_set_style_shadow_ofs_y(ai_btn, 4, 0);
+    lv_obj_set_flex_flow(ai_btn, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(ai_btn, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(ai_btn, 10, 0);
+    NO_SCROLL(ai_btn);
+    lv_obj_add_event_cb(ai_btn, on_ai_chat_btn_click, LV_EVENT_CLICKED, ctx);
+
+    /* Robot icon */
+    lv_obj_t * ai_icon = lv_label_create(ai_btn);
+    lv_obj_set_style_text_font(ai_icon, app_font_fa6_20(), 0);
+    lv_obj_set_style_text_color(ai_icon, lv_color_white(), 0);
+    lv_label_set_text(ai_icon, "\xEF\x95\x84");  /* fa-robot */
+
+    /* Button text */
+    lv_obj_t * ai_text = lv_label_create(ai_btn);
+    lv_label_set_text(ai_text, "AI助手");
+    lv_obj_set_style_text_font(ai_text, app_font_kaiti_18(), 0);
+    lv_obj_set_style_text_color(ai_text, lv_color_white(), 0);
+
     /* ===== FOOTER ===== */
     lv_obj_t * footer = lv_obj_create(screen);
     lv_obj_remove_style_all(footer);
@@ -386,6 +421,14 @@ static void on_network_btn_click(lv_event_t * e)
     home_page_ctx_t * ctx = lv_event_get_user_data(e);
     if(ctx->nav_to_network_cb) {
         ctx->nav_to_network_cb();
+    }
+}
+
+static void on_ai_chat_btn_click(lv_event_t * e)
+{
+    home_page_ctx_t * ctx = lv_event_get_user_data(e);
+    if(ctx->nav_to_ai_chat_cb) {
+        ctx->nav_to_ai_chat_cb();
     }
 }
 

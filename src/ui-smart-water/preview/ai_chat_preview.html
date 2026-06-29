@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=800, initial-scale=1.0">
+<title>AI 智能助手 — 智慧水产养殖</title>
+<style>
+  :root {
+    --bg-deep:    #060E14;
+    --bg-card:    #0A1620;
+    --bg-ai-bubble:  #0D1F2E;
+    --bg-user-bubble:#0A2A24;
+    --bg-think:   #0B1A24;
+    --bg-input:   #0C1822;
+    --accent:     #00D4AA;
+    --accent2:    #0288D1;
+    --gold:       #D4A017;
+    --text:       #E0E0E0;
+    --text-mid:   #9AB8B0;
+    --text-dim:   #5A7A72;
+    --danger:     #FF6B6B;
+    --border:     #1C2E36;
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; }
+
+  body {
+    background: #0a0a14;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    font-family: '楷体', 'KaiTi', 'STKaiti', 'SimKai', serif;
+  }
+
+  /* ── Device frame ── */
+  .device {
+    width: 800px; height: 480px;
+    background: var(--bg-deep);
+    border-radius: 16px;
+    overflow: hidden;
+    display: flex; flex-direction: column;
+    box-shadow: 0 0 60px rgba(0,212,170,0.08), 0 0 120px rgba(2,136,209,0.05);
+    position: relative;
+  }
+
+  /* ═══════════════ TOP BAR ═══════════════ */
+  .topbar {
+    height: 48px; min-height: 48px;
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center;
+    padding: 0 16px;
+    gap: 12px;
+  }
+  .topbar .back-btn {
+    width: 34px; height: 34px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-mid);
+    font-size: 18px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.2s;
+  }
+  .topbar .back-btn:hover {
+    background: var(--border);
+    color: var(--text);
+  }
+
+  .topbar .avatar {
+    width: 34px; height: 34px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, var(--accent2), var(--accent));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  /* Sonar pulse rings */
+  .sonar-container {
+    position: absolute;
+    width: 34px; height: 34px;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+  }
+  .sonar-ring {
+    position: absolute;
+    border: 1.5px solid var(--accent2);
+    border-radius: 50%;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    opacity: 0;
+    animation: sonar-pulse 2.4s ease-out infinite;
+  }
+  .sonar-ring:nth-child(1) { animation-delay: 0s; }
+  .sonar-ring:nth-child(2) { animation-delay: 0.8s; }
+  .sonar-ring:nth-child(3) { animation-delay: 1.6s; }
+
+  @keyframes sonar-pulse {
+    0%   { width:34px; height:34px; opacity:0.7; }
+    100% { width:80px; height:80px; opacity:0; }
+  }
+
+  .topbar .title-area {
+    flex: 1;
+  }
+  .topbar .title {
+    font-size: 18px; color: var(--text);
+    font-weight: bold;
+    letter-spacing: 1px;
+  }
+  .topbar .status {
+    display: flex; align-items: center; gap: 6px;
+  }
+  .topbar .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent);
+    animation: dot-breathe 2s ease-in-out infinite;
+  }
+  @keyframes dot-breathe {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+  .topbar .status-text {
+    font-size: 13px;
+    color: var(--accent);
+  }
+
+  /* ═══════════════ CHAT AREA ═══════════════ */
+  .chat-area {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 16px;
+    display: flex; flex-direction: column;
+    gap: 10px;
+    scroll-behavior: smooth;
+  }
+  .chat-area::-webkit-scrollbar {
+    width: 4px;
+  }
+  .chat-area::-webkit-scrollbar-thumb {
+    background: var(--border); border-radius: 2px;
+  }
+
+  /* ── Think panel (collapsible) ── */
+  .think-panel {
+    background: var(--bg-think);
+    border: 1px solid rgba(212,160,23,0.25);
+    border-left: 3px solid var(--gold);
+    border-radius: 0 10px 10px 0;
+    padding: 0;
+    overflow: hidden;
+    max-height: 400px;
+    transition: max-height 0.35s ease, padding 0.35s ease, opacity 0.35s ease;
+  }
+  .think-panel.collapsed {
+    max-height: 32px;
+  }
+  .think-header {
+    height: 32px;
+    display: flex; align-items: center;
+    gap: 8px;
+    padding: 0 12px;
+    cursor: pointer;
+    user-select: none;
+    font-size: 13px;
+    color: var(--gold);
+  }
+  .think-header .think-icon {
+    font-size: 14px;
+  }
+  .think-header .think-chevron {
+    margin-left: auto;
+    font-size: 12px;
+    transition: transform 0.3s;
+    color: var(--text-dim);
+  }
+  .think-panel.collapsed .think-chevron {
+    transform: rotate(-90deg);
+  }
+  .think-body {
+    padding: 8px 12px 12px;
+    font-size: 13px;
+    color: var(--text-dim);
+    line-height: 1.6;
+    white-space: pre-wrap;
+    border-top: 1px solid rgba(212,160,23,0.1);
+  }
+
+  /* ── Chat bubbles ── */
+  .msg-row {
+    display: flex;
+    gap: 8px;
+    max-width: 88%;
+    animation: msg-in 0.3s ease-out;
+  }
+  @keyframes msg-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .msg-row.ai { align-self: flex-start; }
+  .msg-row.user { align-self: flex-end; flex-direction: row-reverse; }
+
+  .msg-row .msg-icon {
+    width: 30px; height: 30px;
+    border-radius: 8px;
+    flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px;
+    margin-top: 2px;
+  }
+  .msg-row.ai .msg-icon {
+    background: rgba(2,136,209,0.2);
+    color: var(--accent2);
+  }
+  .msg-row.user .msg-icon {
+    background: rgba(0,212,170,0.2);
+    color: var(--accent);
+  }
+
+  .msg-bubble {
+    padding: 10px 14px;
+    border-radius: 12px;
+    font-size: 15px;
+    line-height: 1.55;
+    color: var(--text);
+    position: relative;
+    word-break: break-word;
+  }
+  .msg-row.ai .msg-bubble {
+    background: var(--bg-ai-bubble);
+    border-left: 2px solid var(--accent2);
+    border-radius: 4px 12px 12px 12px;
+  }
+  .msg-row.user .msg-bubble {
+    background: var(--bg-user-bubble);
+    border-right: 2px solid var(--accent);
+    border-radius: 12px 4px 12px 12px;
+  }
+
+  /* ── Streaming cursor ── */
+  .stream-cursor {
+    display: inline-block;
+    width: 2px; height: 16px;
+    background: var(--accent);
+    margin-left: 2px;
+    vertical-align: text-bottom;
+    animation: cursor-blink 0.7s step-end infinite;
+  }
+  @keyframes cursor-blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+
+  /* ── Msg timestamp ── */
+  .msg-time {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 2px;
+    padding: 0 4px;
+  }
+  .msg-row.ai .msg-time { text-align: left; }
+  .msg-row.user .msg-time { text-align: right; }
+
+  /* ── System/Info message ── */
+  .msg-system {
+    align-self: center;
+    font-size: 12px;
+    color: var(--text-dim);
+    background: rgba(255,255,255,0.03);
+    padding: 4px 14px;
+    border-radius: 20px;
+  }
+
+  /* ═══════════════ BOTTOM INPUT BAR ═══════════════ */
+  .input-bar {
+    height: 56px; min-height: 56px;
+    background: var(--bg-input);
+    border-top: 1px solid var(--border);
+    display: flex; align-items: center;
+    padding: 0 12px;
+    gap: 8px;
+  }
+  .input-bar .msg-input {
+    flex: 1;
+    height: 38px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0 14px;
+    font-size: 15px;
+    color: var(--text);
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .input-bar .msg-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 12px rgba(0,212,170,0.1);
+  }
+  .input-bar .msg-input::placeholder {
+    color: var(--text-dim);
+  }
+
+  .btn {
+    height: 38px; min-width: 42px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    font-size: 16px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.2s;
+    color: var(--text-mid);
+    background: var(--bg-card);
+  }
+  .btn:hover { border-color: var(--text-dim); }
+  .btn:active { transform: scale(0.96); }
+
+  .btn-send {
+    background: linear-gradient(135deg, rgba(0,212,170,0.25), rgba(2,136,209,0.25));
+    border-color: rgba(0,212,170,0.4);
+    color: var(--accent);
+    font-size: 18px;
+    width: 42px;
+  }
+  .btn-send:hover {
+    border-color: var(--accent);
+    box-shadow: 0 0 16px rgba(0,212,170,0.2);
+  }
+
+  .btn-stop {
+    background: rgba(255,107,107,0.12);
+    border-color: rgba(255,107,107,0.3);
+    color: var(--danger);
+    width: 42px;
+    display: none;
+  }
+  .btn-stop.visible { display: flex; }
+  .btn-clear {
+    font-size: 12px;
+    padding: 0 10px;
+    color: var(--text-dim);
+  }
+
+  /* ── Toast ── */
+  .toast {
+    position: absolute;
+    top: 60px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,212,170,0.15);
+    border: 1px solid rgba(0,212,170,0.3);
+    color: var(--accent);
+    padding: 6px 20px;
+    border-radius: 20px;
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s;
+  }
+  .toast.show {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* ── Welcom placeholder ── */
+  .welcome {
+    flex: 1;
+    display: flex; flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    opacity: 0.5;
+  }
+  .welcome .big-icon {
+    font-size: 48px;
+    opacity: 0.6;
+  }
+  .welcome .welcome-text {
+    font-size: 16px;
+    color: var(--text-mid);
+  }
+  .welcome .welcome-hints {
+    font-size: 13px;
+    color: var(--text-dim);
+    text-align: center;
+    line-height: 1.8;
+  }
+</style>
+</head>
+<body>
+
+<div class="device" id="app">
+  <!-- ═══════ TOP BAR ═══════ -->
+  <div class="topbar">
+    <button class="back-btn" title="返回首页">←</button>
+    <div class="avatar" id="avatar">
+      🤖
+      <div class="sonar-container" id="sonar">
+        <div class="sonar-ring"></div>
+        <div class="sonar-ring"></div>
+        <div class="sonar-ring"></div>
+      </div>
+    </div>
+    <div class="title-area">
+      <div class="title">AI 智能助手</div>
+    </div>
+    <div class="status">
+      <div class="status-dot"></div>
+      <span class="status-text">DeepSeek-R1</span>
+    </div>
+  </div>
+
+  <!-- ═══════ CHAT AREA ═══════ -->
+  <div class="chat-area" id="chatArea">
+    <!-- Welcome placeholder -->
+    <div class="welcome" id="welcome">
+      <div class="big-icon">🌊</div>
+      <div class="welcome-text">智慧水产 AI 助手</div>
+      <div class="welcome-hints">
+        试试问我：<br>
+        · 草鱼适宜的水温是多少？<br>
+        · 溶氧量偏低怎么办？<br>
+        · 如何判断鱼类是否生病？
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════ INPUT BAR ═══════ -->
+  <div class="input-bar">
+    <button class="btn btn-clear" id="btnClear" title="清空对话">清空</button>
+    <input class="msg-input" id="msgInput"
+           placeholder="输入您的问题..." autocomplete="off">
+    <button class="btn btn-send" id="btnSend" title="发送">➤</button>
+    <button class="btn btn-stop" id="btnStop" title="停止生成">■</button>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
+</div>
+
+<script>
+  // ═══════════════ DEMO INTERACTIONS ═══════════════
+  const chatArea  = document.getElementById('chatArea');
+  const msgInput  = document.getElementById('msgInput');
+  const btnSend   = document.getElementById('btnSend');
+  const btnStop   = document.getElementById('btnStop');
+  const btnClear  = document.getElementById('btnClear');
+  const welcome   = document.getElementById('welcome');
+  const toast     = document.getElementById('toast');
+  const sonar     = document.getElementById('sonar');
+
+  let isStreaming = false;
+  let stopFlag    = false;
+  let msgCounter  = 0;
+
+  function showToast(text, duration=2000) {
+    toast.textContent = text;
+    toast.classList.add('show');
+    clearTimeout(toast._tid);
+    toast._tid = setTimeout(() => toast.classList.remove('show'), duration);
+  }
+
+  function setStreaming(on) {
+    isStreaming = on;
+    sonar.style.display = on ? 'block' : 'none';
+    btnSend.style.display = on ? 'none' : 'flex';
+    btnStop.classList.toggle('visible', on);
+    msgInput.disabled = on;
+    if (on) msgInput.placeholder = 'AI 正在回复...';
+    else     msgInput.placeholder = '输入您的问题...';
+  }
+
+  function scrollBottom() {
+    chatArea.scrollTop = chatArea.scrollHeight;
+  }
+
+  function hideWelcome() {
+    if (welcome) welcome.style.display = 'none';
+  }
+
+  function addMsgBubble(role, text) {
+    hideWelcome();
+    const row = document.createElement('div');
+    row.className = 'msg-row ' + role;
+
+    const icon = document.createElement('div');
+    icon.className = 'msg-icon';
+    icon.textContent = role === 'ai' ? '🤖' : '👤';
+
+    const bubble = document.createElement('div');
+    bubble.className = 'msg-bubble';
+    bubble.textContent = text;
+
+    const time = document.createElement('div');
+    time.className = 'msg-time';
+    const now = new Date();
+    time.textContent = now.getHours().toString().padStart(2,'0') + ':' +
+                       now.getMinutes().toString().padStart(2,'0');
+
+    row.appendChild(icon);
+    row.appendChild(bubble);
+    chatArea.appendChild(row);
+    if (role === 'ai') {
+      // Insert time inside bubble wrapper
+    }
+    scrollBottom();
+    return { row, bubble };
+  }
+
+  function addThinkPanel(thinkText) {
+    hideWelcome();
+    const panel = document.createElement('div');
+    panel.className = 'think-panel';
+
+    const header = document.createElement('div');
+    header.className = 'think-header';
+    header.innerHTML = '<span class="think-icon">💭</span> 思考过程 <span class="think-chevron">▼</span>';
+
+    const body = document.createElement('div');
+    body.className = 'think-body';
+    body.textContent = thinkText;
+
+    header.addEventListener('click', () => {
+      panel.classList.toggle('collapsed');
+      const chev = header.querySelector('.think-chevron');
+    });
+
+    panel.appendChild(header);
+    panel.appendChild(body);
+    chatArea.appendChild(panel);
+    scrollBottom();
+    return panel;
+  }
+
+  // ── Demo: simulate an AI response with streaming ──
+  const DEMO_RESPONSES = [
+    {
+      think: '分析用户问题：水温相关...\n检索知识库：草鱼养殖手册 v2.3\n匹配条目：第4章 水质管理\n置信度：0.94',
+      answer: '草鱼适宜的水温范围是 20°C ~ 28°C。在这个温度区间内，草鱼摄食活跃、生长速度快。当水温低于 15°C 时，草鱼摄食量明显减少；低于 5°C 则进入越冬状态。建议在养殖池中安装温度传感器实时监测，并配置增氧和温控设备。'
+    },
+    {
+      think: '分析用户问题：溶氧量异常...\n当前模拟数据：DO=3.8mg/L（偏低）\n匹配条目：第7章 应急处理',
+      answer: '溶氧量偏低（低于 4mg/L）是水产养殖中的紧急情况，需要立即采取措施：\n\n1. 立即开启所有增氧机，加大曝气量\n2. 适当换水，引入新鲜水源\n3. 减少或停止投喂，降低鱼类耗氧\n4. 检查水质是否有污染源\n\n建议将溶氧量维持在 5mg/L 以上以确保安全。'
+    },
+    {
+      think: '分析用户问题：鱼病诊断...\n检索症状库：体表异常、游动异常\n可能匹配：水霉病(0.62)、寄生虫(0.58)、细菌性烂鳃(0.41)',
+      answer: '根据您描述的症状，我需要更多信息来做准确判断。请问：\n\n1. 鱼的体表是否有白斑或絮状物？\n2. 鱼鳃是否发白或肿胀？\n3. 有没有出现大规模死亡？\n4. 最近水质参数（pH、氨氮、溶氧）是否有异常？\n\n请提供这些细节，我可以给出更有针对性的建议。'
+    }
+  ];
+
+  async function simulateStream(answerText) {
+    const { row, bubble } = addMsgBubble('ai', '');
+    row.querySelector('.msg-icon').style.position = 'relative';
+    // Add a mini sonar inside the AI icon
+    const miniSonar = document.createElement('div');
+    miniSonar.className = 'sonar-container';
+    miniSonar.innerHTML = '<div class="sonar-ring"></div><div class="sonar-ring"></div><div class="sonar-ring"></div>';
+    miniSonar.style.position = 'absolute';
+    row.querySelector('.msg-icon').appendChild(miniSonar);
+
+    const cursor = document.createElement('span');
+    cursor.className = 'stream-cursor';
+    bubble.appendChild(cursor);
+
+    let i = 0;
+    stopFlag = false;
+
+    while (i < answerText.length && !stopFlag) {
+      const chunk = answerText.charAt(i);
+      bubble.insertBefore(document.createTextNode(chunk), cursor);
+      i++;
+      scrollBottom();
+      await new Promise(r => setTimeout(r, 25 + Math.random() * 35));
+    }
+
+    cursor.remove();
+    // Remove mini sonar from icon
+    if (miniSonar.parentNode) miniSonar.remove();
+
+    if (stopFlag) {
+      bubble.textContent += ' [已停止]';
+      showToast('生成已停止');
+    }
+
+    setStreaming(false);
+  }
+
+  async function sendMessage() {
+    const text = msgInput.value.trim();
+    if (!text || isStreaming) return;
+
+    hideWelcome();
+    addMsgBubble('user', text);
+    msgInput.value = '';
+    scrollBottom();
+
+    // Simulate thinking delay
+    setStreaming(true);
+    await new Promise(r => setTimeout(r, 600 + Math.random() * 800));
+
+    // Pick a demo response
+    const resp = DEMO_RESPONSES[msgCounter % DEMO_RESPONSES.length];
+    msgCounter++;
+
+    // Show thinking panel
+    const thinkPanel = addThinkPanel(resp.think);
+    await new Promise(r => setTimeout(r, 400));
+    thinkPanel.classList.add('collapsed');
+
+    // Stream answer
+    await simulateStream(resp.answer);
+    msgInput.focus();
+  }
+
+  // ── Event bindings ──
+  btnSend.addEventListener('click', sendMessage);
+  msgInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+
+  btnStop.addEventListener('click', () => {
+    if (isStreaming) {
+      stopFlag = true;
+      setStreaming(false);
+      showToast('正在停止...');
+    }
+  });
+
+  btnClear.addEventListener('click', () => {
+    if (isStreaming) {
+      showToast('请先停止当前回复');
+      return;
+    }
+    // Remove all children except welcome
+    while (chatArea.firstChild) {
+      chatArea.removeChild(chatArea.firstChild);
+    }
+    chatArea.innerHTML = '';
+    // Re-add welcome
+    const w = document.createElement('div');
+    w.className = 'welcome';
+    w.id = 'welcome';
+    w.innerHTML = '<div class="big-icon">🌊</div><div class="welcome-text">智慧水产 AI 助手</div><div class="welcome-hints">试试问我：<br>· 草鱼适宜的水温是多少？<br>· 溶氧量偏低怎么办？<br>· 如何判断鱼类是否生病？</div>';
+    chatArea.appendChild(w);
+    msgCounter = 0;
+    showToast('对话已清空');
+  });
+
+  // Focus input on load
+  msgInput.focus();
+</script>
+
+</body>
+</html>

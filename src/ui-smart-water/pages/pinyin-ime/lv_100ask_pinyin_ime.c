@@ -486,7 +486,7 @@ lv_obj_t * lv_100ask_pinyin_ime_create(lv_obj_t * parent)
 
 void lv_100ask_pinyin_ime_set_dict(lv_obj_t * obj, lv_100ask_pinyin_dict_t * dict)
 {
-    LV_ASSERT_OBJ(obj, MY_CLASS);
+    LV_CHECK_OBJ(obj, MY_CLASS, return);
 
     init_pinyin_dict(obj, dict);
 }
@@ -496,7 +496,7 @@ void lv_100ask_pinyin_ime_set_dict(lv_obj_t * obj, lv_100ask_pinyin_dict_t * dic
  *====================*/
 lv_obj_t * lv_100ask_pinyin_ime_get_kb(lv_obj_t * obj)
 {
-    LV_ASSERT_OBJ(obj, MY_CLASS);
+    LV_CHECK_OBJ(obj, MY_CLASS, return NULL);
 
     lv_100ask_pinyin_ime_t * pinyin_ime = (lv_100ask_pinyin_ime_t *)obj;
 
@@ -505,7 +505,7 @@ lv_obj_t * lv_100ask_pinyin_ime_get_kb(lv_obj_t * obj)
 
 lv_obj_t * lv_100ask_pinyin_ime_get_cand_panel(lv_obj_t * obj)
 {
-    LV_ASSERT_OBJ(obj, MY_CLASS);
+    LV_CHECK_OBJ(obj, MY_CLASS, return NULL);
 
     lv_100ask_pinyin_ime_t * pinyin_ime = (lv_100ask_pinyin_ime_t *)obj;
 
@@ -515,7 +515,7 @@ lv_obj_t * lv_100ask_pinyin_ime_get_cand_panel(lv_obj_t * obj)
 
 lv_100ask_pinyin_dict_t * lv_100ask_pinyin_ime_get_dict(lv_obj_t * obj)
 {
-    LV_ASSERT_OBJ(obj, MY_CLASS);
+    LV_CHECK_OBJ(obj, MY_CLASS, return NULL);
 
     lv_100ask_pinyin_ime_t * pinyin_ime = (lv_100ask_pinyin_ime_t *)obj;
 

@@ -1,5 +1,11 @@
 // ========== app_actions.c ==========
-// Stub implementations — replace with real logic for your platform.
+// 所有页面的平台相关回调函数实现。
+//
+//   分区 1：登录与注册    (login_page, register_page)
+//   分区 2：视频播放器    (video_page)
+//   分区 3：网络通讯      (network_page)
+//   分区 4：AI 对话       (ai_chat_page)
+//
 #include "app_actions.h"
 #include "video-page/video_page.h"
 #include <string.h>
@@ -14,10 +20,13 @@
 #include <unistd.h>
 #endif
 
-/*********************
- *      DEFINES
- *********************/
-/* Video folder — change these to match your deployment layout */
+/***********************************************************************
+ *  ╔══════════════════════════════════════════════════════════════╗
+ *  ║  全局配置与状态                                              ║
+ *  ╚══════════════════════════════════════════════════════════════╝
+ ***********************************************************************/
+
+/* ── 视频： 文件夹路径与几何参数（需与 video_page.c 保持一致） ── */
 #ifdef __linux__
 #define VIDEOS_DIR      "/root/videos"
 #define VIDEOS_DIR_FMT  "/root/videos/%s"
@@ -26,41 +35,40 @@
 #define VIDEOS_DIR_FMT  "A:../src/ui-smart-water/videos/%s"
 #endif
 
-/* Video sub-region geometry (must match mplayer -geometry and video_page.c) */
 #define VID_X      16
 #define VID_Y      65
 #define VID_W      768
 #define VID_H      305
-
-/* ===== VIDEO LIST — dynamically scanned ===== */
 #define MAX_VIDEOS 5
-static char ** g_video_paths  = NULL;
-static int     g_video_count  = 0;
-static int     g_video_index  = 0;
-static char    g_cur_video_path[256] = "";
 
-/**********************
- *  STATIC VARIABLES
- **********************/
+/* ── 登录： 保存的登录凭据 ── */
 static char g_saved_user[33] = "";
 static char g_saved_pass[33] = "";
 
+/* ── 视频： 全局状态 ── */
+static char ** g_video_paths     = NULL;
+static int     g_video_count     = 0;
+static int     g_video_index     = 0;
+static char    g_cur_video_path[256] = "";
 static lv_obj_t * g_video_screen = NULL;
 
 #ifdef __linux__
-static pid_t     g_mplayer_pid   = 0;
-static int       g_video_pos     = 0;
-static int       g_video_total_sec = 0;
-static bool      g_video_playing = false;
+static pid_t     g_mplayer_pid      = 0;
+static int       g_video_pos        = 0;
+static int       g_video_total_sec  = 0;
+static bool      g_video_playing    = false;
 static lv_timer_t * g_progress_timer = NULL;
-static int       g_mp_fifo_fd    = -1;
+static int       g_mp_fifo_fd       = -1;
 #endif
 
-/**********************
- *   GLOBAL FUNCTIONS
- **********************/
+/***********************************************************************
+ *  ╔══════════════════════════════════════════════════════════════╗
+ *  ║  分区 1：登录与注册                                          ║
+ *  ║  页面：login_page.c, register_page.c                         ║
+ *  ╚══════════════════════════════════════════════════════════════╝
+ ***********************************************************************/
 
-/* ---- Login verification ---- */
+/* ── 登录： 验证凭据是否与保存的一致 ── */
 bool app_action_login_verify(const char * username, const char * password)
 {
     LV_LOG_USER("Login attempt: user='%s'", username);
@@ -80,7 +88,7 @@ bool app_action_login_verify(const char * username, const char * password)
     return false;
 }
 
-/* ---- Registration ---- */
+/* ── 注册： 提交新账号 ── */
 bool app_action_register_submit(const char * username, const char * password)
 {
     LV_LOG_USER("Register attempt: user='%s'", username);
@@ -89,18 +97,26 @@ bool app_action_register_submit(const char * username, const char * password)
     return true;
 }
 
+/* ── 登录： 通知登录成功 ── */
 void app_action_login_success(void)
 {
     LV_LOG_USER("Login success!");
 }
 
-/* Called by ui.c after video page is created */
+/***********************************************************************
+ *  ╔══════════════════════════════════════════════════════════════╗
+ *  ║  分区 2：视频播放器                                          ║
+ *  ║  页面：video_page.c                                          ║
+ *  ╚══════════════════════════════════════════════════════════════╝
+ ***********************************************************************/
+
+/* ── 视频： 设置活跃屏幕指针（由 ui.c 调用） ── */
 void app_action_set_video_screen(lv_obj_t * screen)
 {
     g_video_screen = screen;
 }
 
-/* ---- Scanning: discover .mp4 files in videos/ folder ---- */
+/* ── 视频： 扫描 videos/ 文件夹中的 .mp4 文件 ── */
 void app_action_video_scan(void)
 {
     lv_fs_dir_t dir;
@@ -115,7 +131,7 @@ void app_action_video_scan(void)
         return;
     }
 
-    /* Count .mp4 files (max 256 iterations, max MAX_VIDEOS) */
+    /* 统计 .mp4 文件（最多 256 次迭代，上限 MAX_VIDEOS） */
     int count = 0;
     for(i = 0; i < 256; i++) {
         if(lv_fs_dir_read(&dir, fn, sizeof(fn)) != LV_FS_RES_OK) break;
@@ -140,7 +156,7 @@ void app_action_video_scan(void)
     if(!g_video_paths) { g_video_count = 0; return; }
     memset(g_video_paths, 0, sizeof(char *) * count);
 
-    /* Collect filenames */
+    /* 收集文件名 */
     if(lv_fs_dir_open(&dir, dir_path) != LV_FS_RES_OK) {
         lv_free(g_video_paths);
         g_video_paths = NULL;
@@ -167,7 +183,7 @@ void app_action_video_scan(void)
     lv_fs_dir_close(&dir);
     g_video_count = idx;
 
-    /* Init current path */
+    /* 初始化当前路径 */
     if(g_video_count > 0) {
         snprintf(g_cur_video_path, sizeof(g_cur_video_path),
                  "%s", g_video_paths[0]);
@@ -191,7 +207,7 @@ void app_action_video_select(int index)
 
     LV_LOG_USER("video_select: switching to index %d", index);
 
-    /* Always stop any running mplayer before switching */
+    /* 切换前必须先停止正在运行的 mplayer */
     app_action_video_stop();
 
     g_video_index = index;
@@ -202,7 +218,7 @@ void app_action_video_select(int index)
 
     LV_LOG_USER("video_select: now playing %s", g_cur_video_path);
 
-    /* Update UI — reset progress */
+    /* 更新界面 — 重置进度条 */
     video_page_update_progress(g_video_screen, 0, "00:00", "??:??");
     video_page_set_play_state(g_video_screen, false);
     video_page_set_video_active(g_video_screen, false);
@@ -216,7 +232,7 @@ const char * app_action_video_get_cover(int index)
     snprintf(cover_path, sizeof(cover_path),
              "/tmp/video_cover_%d.png", index);
 
-    /* Already cached? */
+    /* 已缓存时长？ */
     if(access(cover_path, F_OK) == 0) {
         char cached[300];
         snprintf(cached, sizeof(cached), "A:%s", cover_path);
@@ -225,7 +241,7 @@ const char * app_action_video_get_cover(int index)
         return NULL;
     }
 
-    /* Try mplayer: run in /tmp so 00000001.png lands there directly */
+    /* 尝试用 mplayer 提取：在 /tmp 下运行，截帧图直接放在那里 */
     LV_LOG_USER("video_cover: extracting cover %d via mplayer...", index);
     char cmd[768];
     snprintf(cmd, sizeof(cmd),
@@ -237,7 +253,7 @@ const char * app_action_video_get_cover(int index)
     int ret = system(cmd);
 
     if(ret == 0 && access(cover_path, F_OK) == 0) {
-        /* Verify the file is readable and has content */
+        /* 验证文件可读且有内容 */
         struct stat st;
         if(stat(cover_path, &st) == 0 && st.st_size > 100) {
             LV_LOG_USER("video_cover: OK for index %d (%ld bytes)", index, (long)st.st_size);
@@ -255,9 +271,7 @@ const char * app_action_video_get_cover(int index)
     return NULL;
 }
 
-/**********************
- *   WiFi / Network Check
- **********************/
+/* ── 视频： WiFi/网络可达性检测（周期性定时器） ── */
 
 wifi_status_t app_action_check_wifi(void)
 {
@@ -272,7 +286,7 @@ wifi_status_t app_action_check_wifi(void)
      *  starving the LVGL main loop.
      */
 
-    /* --- Step 1: external (WAN) --- */
+    /* --- 第一步：外网检测 (WAN) --- */
     {
         int ret = system("ping -c 1 -w 2 8.8.8.8 >/dev/null 2>&1");
         if (ret == 0) {
@@ -281,9 +295,9 @@ wifi_status_t app_action_check_wifi(void)
         }
     }
 
-    /* --- Step 2: gateway (LAN) --- */
+    /* --- 第二步：网关检测 (LAN) --- */
     {
-        /* Try to read the default gateway from the routing table */
+        /* 尝试从路由表读取默认网关 */
         char gw[32] = {0};
         FILE *fp = popen(
             "ip route show default 2>/dev/null | awk '{print $3}'", "r");
@@ -295,7 +309,7 @@ wifi_status_t app_action_check_wifi(void)
             pclose(fp);
         }
 
-        /* If we got a gateway, ping it */
+        /* 拿到了网关地址，ping 一下 */
         if (gw[0] != '\0') {
             char cmd[64];
             snprintf(cmd, sizeof(cmd),
@@ -306,7 +320,7 @@ wifi_status_t app_action_check_wifi(void)
             }
         }
 
-        /* Fallback: try common gateway addresses */
+        /* 回退：尝试常见网关地址 */
         const char * fallbacks[] = {
             "192.168.1.1", "192.168.0.1", "192.168.1.254", "10.0.0.1"
         };
@@ -322,12 +336,12 @@ wifi_status_t app_action_check_wifi(void)
         }
     }
 
-    /* --- Step 3: nothing reachable --- */
+    /* --- 第三步：无网络可达 --- */
     LV_LOG_USER("wifi: no network → RED");
     return WIFI_STATUS_RED;
 
 #else
-    /* PC / Windows stub — always report GREEN for UI simulation */
+    /* PC/Windows 桩 — 始终返回 GREEN 供 UI 模拟 */
     (void)0;
     return WIFI_STATUS_GREEN;
 #endif
@@ -344,7 +358,7 @@ static void format_time(int sec, char * buf, size_t buf_size);
 static void progress_timer_cb(lv_timer_t * timer);
 static void mplayer_died(void);
 
-/* ---- FIFO helpers ---- */
+/* ── MPlayer： FIFO 辅助函数 ── */
 
 static void mp_fifo_open(void)
 {
@@ -386,7 +400,7 @@ static bool mp_cmd(const char * cmd)
     return true;
 }
 
-/* Query actual video duration from mplayer -identify (cached on first call). */
+/* 从 mplayer -identify 查询视频时长（首次调用后缓存） */
 static int get_video_duration_sec(void)
 {
     if(g_video_total_sec > 0) return g_video_total_sec;
@@ -417,21 +431,21 @@ static int get_video_duration_sec(void)
     return g_video_total_sec;
 }
 
-/* Force-kill any mplayer process (zombie or not) */
+/* ── MPlayer： 强制杀死所有 mplayer 进程（含僵尸进程） ── */
 static void mplayer_force_kill(void)
 {
-    /* Kill by PID if we have it */
+    /* 如果有 PID，按 PID 杀 */
     if(g_mplayer_pid != 0) {
         LV_LOG_USER("mplayer_force_kill: killing pid=%d", (int)g_mplayer_pid);
         kill(g_mplayer_pid, SIGKILL);
         usleep(100000);
         g_mplayer_pid = 0;
     }
-    /* Also kill any stray mplayer processes */
+    /* 同时杀死所有残留的 mplayer 进程 */
     system("killall -9 mplayer 2>/dev/null");
     usleep(50000);
 
-    /* Clean up FIFO and timer */
+    /* 清理 FIFO 和定时器 */
     mp_fifo_close();
     unlink(MP_CMD_FIFO);
 
@@ -444,10 +458,10 @@ static void mplayer_force_kill(void)
     g_video_pos = 0;
 }
 
-/* Start mplayer in slave mode. ALWAYS kills old process first. */
+/* ── MPlayer： 以 slave 模式启动（先杀旧进程） ── */
 static void mplayer_start(int start_pos)
 {
-    /* Force kill any existing mplayer — never have two running */
+    /* 强制杀死已有的 mplayer — 绝不允许两个同时运行 */
     mplayer_force_kill();
 
     LV_LOG_USER("mplayer_start: path=%s pos=%d", g_cur_video_path, start_pos);
@@ -456,7 +470,7 @@ static void mplayer_start(int start_pos)
     int total = get_video_duration_sec();
     if(total < 1) total = 236;
 
-    /* Create the command FIFO */
+    /* 创建命令 FIFO */
     unlink(MP_CMD_FIFO);
     if(mkfifo(MP_CMD_FIFO, 0666) < 0) {
         LV_LOG_USER("mplayer_start: cannot create fifo %s", MP_CMD_FIFO);
@@ -482,7 +496,7 @@ static void mplayer_start(int start_pos)
     LV_LOG_USER("mplayer_start: system ret=%d", ret);
 
     if(ret == 0) {
-        /* Wait a moment for mplayer to start */
+        /* 等待 mplayer 启动 */
         usleep(200000);
 
         FILE * fp = popen("pidof mplayer", "r");
@@ -520,7 +534,7 @@ static void mplayer_start(int start_pos)
     }
 }
 
-/* Called when mplayer exits unexpectedly (EOF, crash, etc.) */
+/* mplayer 异常退出时的回调（EOF、崩溃等） */
 static void mplayer_died(void)
 {
     LV_LOG_USER("mplayer died, cleaning up");
@@ -536,7 +550,7 @@ static void mplayer_died(void)
     unlink(MP_CMD_FIFO);
     video_page_set_play_state(g_video_screen, false);
     video_page_set_video_active(g_video_screen, false);
-    /* Reset progress so user can replay */
+    /* 重置进度，让用户可以重播 */
     video_page_update_progress(g_video_screen, 0, "00:00", "??:??");
 }
 
@@ -549,7 +563,7 @@ static void mplayer_stop(void)
     video_page_update_progress(g_video_screen, 0, "00:00", "??:??");
 }
 
-/* ----- Controls: send slave commands over FIFO, NO kill+restart ----- */
+/* ── MPlayer： 通过 FIFO 发送 slave 命令（不杀进程、不重启） ── */
 
 static void mplayer_pause(void)
 {
@@ -595,7 +609,7 @@ static void mplayer_seek_abs(int sec)
     mp_cmd(c);
 }
 
-/* ----- Public callbacks ----- */
+/* ── 视频： 公开 API（由 video_page.c 调用） ── */
 
 void app_action_video_stop(void)
 {
@@ -644,14 +658,14 @@ void app_action_video_seek(int32_t position)
     video_page_update_progress(g_video_screen, g_video_pos, current, total);
 }
 
-/* ----- Progress timer ----- */
+/* ── MPlayer： 进度定时器与时间格式化 ── */
 
 static void progress_timer_cb(lv_timer_t * timer)
 {
     (void)timer;
     if(!g_video_playing) return;
 
-    /* Detect mplayer exit (EOF) — kill(pid, 0) returns -1 if process gone */
+    /* 检测 mplayer 是否退出（EOF）— kill(pid, 0) 返回 -1 表示进程已消失 */
     if(g_mplayer_pid != 0 && kill(g_mplayer_pid, 0) != 0) {
         mplayer_died();
         return;
@@ -661,7 +675,7 @@ static void progress_timer_cb(lv_timer_t * timer)
         g_video_pos++;
     }
 
-    /* Flush UI every 2 ticks so the slider moves smoothly. */
+    /* 每两拍刷新一次 UI，让滑块丝滑 */
     static int tick = 0;
     if(++tick >= 1) {
         tick = 0;
@@ -679,7 +693,7 @@ static void format_time(int sec, char * buf, size_t buf_size)
     snprintf(buf, buf_size, "%02d:%02d", sec / 60, sec % 60);
 }
 
-#else  /* !__linux__ — PC / Windows stub */
+#else  /* !__linux__ — PC/Windows 桩 */
 
 void app_action_video_stop(void)
 {
@@ -712,15 +726,15 @@ void app_action_video_seek(int32_t position)
     LV_LOG_USER("Video: seek to %ld/1000 (stub)", (long)position);
 }
 
-#endif /* __linux__ */
+#endif /* __linux__ 视频 mplayer 控制块 */
 
-/**********************
- *   Network Communication
- **********************/
-/**********************
- *   Network Communication — socket-integrated
- *   socket → connect → spawn recv_thread → LVGL-safe UI updates
- **********************/
+/***********************************************************************
+ *  ╔══════════════════════════════════════════════════════════════╗
+ *  ║  分区 3：网络通讯                                            ║
+ *  ║  页面：network_page.c                                        ║
+ *  ╚══════════════════════════════════════════════════════════════╝
+ *  socket → connect → spawn recv_thread → LVGL-safe UI updates
+ ***********************************************************************/
 #include "network-page/network_page.h"
 
 static lv_obj_t * g_network_screen = NULL;
@@ -735,10 +749,10 @@ static lv_obj_t * g_network_screen = NULL;
 #define TCP_BUF_SIZE  1024
 
 static int       g_sock       = -1;   /* TCP socket fd */
-static pthread_t g_recv_tid;         /* Receive thread */
-static bool      g_recv_run  = false; /* Thread run flag */
+static pthread_t g_recv_tid;         /* 接收线程 */
+static bool      g_recv_run  = false; /* 线程运行标志 */
 
-/* ---- Thread-safe: push received message to LVGL ---- */
+/* ── 网络： 线程安全的 UI 更新（lv_async_call） ── */
 static void tcp_update_screen(void * data)
 {
     if (g_network_screen == NULL || data == NULL) return;
@@ -747,7 +761,7 @@ static void tcp_update_screen(void * data)
     lv_free(msg);
 }
 
-/* ---- Receive thread ---- */
+/* ── 网络： TCP 接收线程 ── */
 static void * tcp_recv_thread(void * arg)
 {
     (void)arg;
@@ -756,32 +770,32 @@ static void * tcp_recv_thread(void * arg)
     while (g_recv_run) {
         int n = read(g_sock, buf, sizeof(buf) - 1);
         if (n <= 0) {
-            /* Connection closed or error */
+            /* 连接关闭或出错 */
             lv_async_call(tcp_update_screen, strdup("服务器已断开"));
             break;
         }
         buf[n] = '\0';
-        /* Strip trailing \n */
+        /* 去除末尾 \n */
         size_t len = strlen(buf);
         if (len > 0 && buf[len - 1] == '\n') buf[len - 1] = '\0';
         if (len > 1 && buf[len - 2] == '\r') buf[len - 2] = '\0';
 
-        /* Copy to heap — lv_async_call will free it */
+        /* 拷贝到堆 — lv_async_call 会负责释放 */
         lv_async_call(tcp_update_screen, strdup(buf));
     }
 
-    /* Cleanup on thread exit */
+    /* 线程退出时清理 */
     if (g_sock >= 0) {
         close(g_sock);
         g_sock = -1;
     }
     g_recv_run = false;
-    /* Update UI */
+    /* 更新界面 */
     lv_async_call(tcp_update_screen, strdup("[client] 连接已断开"));
     return NULL;
 }
 
-/* ---- Connect ---- */
+/* ── 网络： TCP 连接 ── */
 static bool tcp_connect(const char * ip, int port)
 {
     g_sock = socket(AF_INET, SOCK_STREAM, 0);
@@ -819,7 +833,7 @@ static bool tcp_connect(const char * ip, int port)
     return true;
 }
 
-/* ---- Disconnect ---- */
+/* ── 网络： TCP 断开连接 ── */
 static void tcp_disconnect(void)
 {
     g_recv_run = false;
@@ -832,9 +846,9 @@ static void tcp_disconnect(void)
     usleep(100000);
 }
 
-#endif /* __linux__ */
+#endif /* __linux__ 视频 mplayer 控制块 */
 
-/* ================================================================ */
+/* ── 网络： 公开 API（由 network_page.c 调用） ── */
 
 void app_action_set_network_screen(lv_obj_t * screen)
 {
@@ -916,4 +930,508 @@ void app_action_network_send(const char * message)
     network_page_append_message(g_network_screen, NETWORK_MSG_RECV,
                                 "已收到数据 (PC模拟)");
 #endif
+}
+
+/***********************************************************************
+ *  ╔══════════════════════════════════════════════════════════════╗
+ *  ║  分区 4：AI 对话 — Ollama / DeepSeek-R1                      ║
+ *  ║  页面：ai_chat_page.c                                        ║
+ *  ╚══════════════════════════════════════════════════════════════╝
+ *  HTTP POST → /api/chat (non-streaming) → parse JSON → split
+ *  <think> into thinking panel → display answer in bubble.
+ *  Pure POSIX sockets via http_client.h. Pthread recv → lv_async_call.
+ ***********************************************************************/
+#include "ai-chat-page/ai_chat_page.h"
+#include "ai-chat-page/http_client.h"
+#include <pthread.h>
+
+/* ── AI： Ollama 服务器配置 ── */
+#ifdef __linux__
+#define OLLAMA_HOST       "192.168.137.1"
+#else
+#define OLLAMA_HOST       "localhost"
+#endif
+#define OLLAMA_PORT       11434
+#define OLLAMA_MODEL      "deepseek-r1:7b"
+#define OLLAMA_TMO        300  /* 5 min — DeepSeek-R1 model loading can be slow */
+#define OLLAMA_SYSTEM_MSG "你是智慧水产养殖AI助手，精通水质管理、鱼病诊断、投喂策略、养殖技术等水产领域知识。请用简洁专业的中文回答。"
+
+/* ── AI： 状态变量 ── */
+static lv_obj_t * g_ai_screen  = NULL;
+static int        g_ai_sock    = -1;   /* socket to close on stop */
+static pthread_t  g_ai_thread;
+static bool       g_ai_running = false;
+static bool       g_ai_stop    = false;
+
+/* ── AI： 对话历史（环形缓冲区，最多 100 轮） ── */
+#define AI_HIST_MAX 100
+static char * g_ai_hist[AI_HIST_MAX];
+static int    g_ai_hist_n    = 0;
+static int    g_ai_hist_head = 0;
+
+/* ── AI： JSON 辅助函数（零依赖，来自 gec6818_ollama_client） ── */
+
+static char* ai_json_val(const char *s, const char *key)
+{
+    char pat[256];
+    int pl = snprintf(pat, sizeof(pat), "\"%s\":\"", key);
+    if (pl < 1 || pl >= (int)sizeof(pat)) return NULL;
+    const char *p = strstr(s, pat);
+    if (!p) return NULL;
+    p += pl;
+    const char *end = p;
+    while (*end && *end != '"') { if (*end == '\\' && end[1]) end++; end++; }
+    if (!*end) return NULL;
+    size_t len = (size_t)(end - p);
+    char *out = malloc(len + 1);
+    if (!out) return NULL;
+    char *d = out;
+    while (p < end) {
+        if (*p == '\\' && p + 1 < end) {
+            p++;
+            switch (*p) {
+                case 'n':  *d++ = '\n'; p++; continue;
+                case 't':  *d++ = '\t'; p++; continue;
+                case 'r':  *d++ = '\r'; p++; continue;
+                case '"':  *d++ = '"';  p++; continue;
+                case '\\': *d++ = '\\'; p++; continue;
+                case 'u': {
+                    /* 解码 \uXXXX（Ollama 会将 < > HTML 转义为 < >） */
+                    p++;  /* skip 'u' */
+                    if (p + 4 <= end) {
+                        char hex[5];
+                        memcpy(hex, p, 4); hex[4] = '\0';
+                        unsigned int cp = (unsigned int)strtoul(hex, NULL, 16);
+                        if (cp < 0x80) {
+                            *d++ = (char)cp;
+                        } else if (cp < 0x800) {
+                            *d++ = (char)(0xC0 | (cp >> 6));
+                            *d++ = (char)(0x80 | (cp & 0x3F));
+                        } else {
+                            *d++ = (char)(0xE0 | (cp >> 12));
+                            *d++ = (char)(0x80 | ((cp >> 6) & 0x3F));
+                            *d++ = (char)(0x80 | (cp & 0x3F));
+                        }
+                    }
+                    p += 4;
+                    continue;
+                }
+            }
+        }
+        *d++ = *p++;
+    }
+    *d = '\0';
+    return out;
+}
+
+static char* ai_json_esc(const char *src)
+{
+    if (!src) return strdup("");
+    size_t cap = strlen(src) + 128;
+    char *buf = malloc(cap), *d = buf;
+    if (!buf) return NULL;
+    while (*src) {
+        if ((size_t)(d - buf) + 3 > cap) {
+            size_t off = (size_t)(d - buf);
+            cap *= 2;
+            char *t = realloc(buf, cap);
+            if (!t) { free(buf); return NULL; }
+            buf = t; d = buf + off;
+        }
+        switch (*src) {
+            case '"':  *d++ = '\\'; *d++ = '"';  break;
+            case '\\': *d++ = '\\'; *d++ = '\\'; break;
+            case '\n': *d++ = '\\'; *d++ = 'n';  break;
+            case '\r': *d++ = '\\'; *d++ = 'r';  break;
+            case '\t': *d++ = '\\'; *d++ = 't';  break;
+            default:   *d++ = *src; break;
+        }
+        src++;
+    }
+    *d = '\0';
+    return buf;
+}
+
+/* 拆分 <think>...</think> 块，返回 malloc 的思考文本（或 NULL）。
+ * 返回的字符串由调用方释放；输入字符串在原地修改以移除 think 块。 */
+static char* ai_split_think(char *text)
+{
+    if (!text) return NULL;
+
+    LV_LOG_USER("AI: split_think start, first 60 chars: %.60s", text);
+
+    size_t tcap = 256, tlen = 0;
+    char *think = malloc(tcap);
+    if (!think) return NULL;
+    think[0] = '\0';
+
+    char *src = text;
+    char *dst = text;
+
+    while (*src) {
+        /* Use strstr to find next <think> anywhere in remaining text */
+        char *tag = strstr(src, "<think>");
+        if (!tag) {
+            /* No more think blocks — copy rest and finish */
+            size_t rest = strlen(src);
+            if (dst != src) memmove(dst, src, rest + 1);
+            LV_LOG_USER("AI: split_think no more tags, remaining=%zu", rest);
+            break;
+        }
+
+        LV_LOG_USER("AI: split_think found <think> at offset %d", (int)(tag - text));
+
+        /* Copy text before <think> */
+        if (tag > dst) {
+            size_t prefix = (size_t)(tag - src);
+            if (dst != src) memmove(dst, src, prefix);
+            dst += prefix;
+        }
+        src = tag + 7;  /* skip <think> */
+
+        /* Find closing </think> */
+        char *close_tag = strstr(src, "</think>");
+        if (close_tag) {
+            size_t chunk = (size_t)(close_tag - src);
+            LV_LOG_USER("AI: split_think found </think>, chunk=%zu", chunk);
+
+            /* Expand think buffer if needed */
+            if (tlen + chunk + 2 > tcap) {
+                tcap = tlen + chunk + 256;
+                char *tmp = realloc(think, tcap);
+                if (!tmp) { free(think); return NULL; }
+                think = tmp;
+            }
+
+            if (tlen > 0) think[tlen++] = '\n';
+            memcpy(think + tlen, src, chunk);
+            tlen += chunk;
+            think[tlen] = '\0';
+
+            src = close_tag + 8;  /* skip </think> */
+        } else {
+            LV_LOG_USER("AI: split_think no closing </think> found");
+            src += strlen(src);
+        }
+    }
+
+    if (dst != text) *dst = '\0';
+
+    LV_LOG_USER("AI: split_think done, think=%zu chars, answer=%zu chars",
+                tlen, strlen(text));
+
+    if (tlen == 0) { free(think); return NULL; }
+    return think;
+}
+
+/* ── AI： 对话历史管理 ── */
+
+static void ai_hist_add(const char *role, const char *msg)
+{
+    char *safe = ai_json_esc(msg);
+    if (!safe) return;
+    char frag[8192];
+    snprintf(frag, sizeof(frag), "{\"role\":\"%s\",\"content\":\"%s\"}", role, safe);
+    free(safe);
+
+    if (g_ai_hist_n >= AI_HIST_MAX) {
+        free(g_ai_hist[g_ai_hist_head]);
+        g_ai_hist_head = (g_ai_hist_head + 1) % AI_HIST_MAX;
+        g_ai_hist_n--;
+    }
+    g_ai_hist[(g_ai_hist_head + g_ai_hist_n) % AI_HIST_MAX] = strdup(frag);
+    g_ai_hist_n++;
+}
+
+static void ai_hist_clear(void)
+{
+    for (int i = 0; i < AI_HIST_MAX; i++) {
+        free(g_ai_hist[i]); g_ai_hist[i] = NULL;
+    }
+    g_ai_hist_n = g_ai_hist_head = 0;
+}
+
+/* ── AI： 从对话历史构建 JSON 请求体 ── */
+
+static char* ai_build_body(const char *user_msg)
+{
+    /* Add user message to history for body building */
+    ai_hist_add("user", user_msg);
+
+    size_t cap = 32768;
+    char *body = malloc(cap);
+    if (!body) return NULL;
+
+    /* Escaped system prompt and user message */
+    char *esc_sys = ai_json_esc(OLLAMA_SYSTEM_MSG);
+    int pos = snprintf(body, cap,
+        "{\"model\":\"%s\",\"messages\":["
+        "{\"role\":\"system\",\"content\":\"%s\"}",
+        OLLAMA_MODEL, esc_sys ? esc_sys : "");
+    free(esc_sys);
+
+    if (g_ai_hist_n > 0) {
+        pos += snprintf(body + pos, cap - (size_t)pos, ",");
+    }
+
+    for (int i = 0; i < g_ai_hist_n; i++) {
+        pos += snprintf(body + pos, cap - (size_t)pos,
+            "%s%s", g_ai_hist[(g_ai_hist_head + i) % AI_HIST_MAX],
+            i < g_ai_hist_n - 1 ? "," : "");
+    }
+    pos += snprintf(body + pos, cap - (size_t)pos, "],\"stream\":false}");
+
+    LV_LOG_USER("AI: body %d bytes", pos);
+    return body;
+}
+
+/* ── AI： UI 更新回调（单次 lv_async_call 保证顺序！） ── */
+
+typedef struct {
+    char *thinking;   /* malloc'd, NULL if none */
+    char *answer;     /* malloc'd, NULL if none */
+    char *error;      /* malloc'd, NULL if none */
+} ai_ui_packet_t;
+
+static void ai_ui_show(void * data)
+{
+    ai_ui_packet_t *p = (ai_ui_packet_t *)data;
+    LV_LOG_USER("AI: ui_show screen=%p err=%p think=%p ans=%p",
+                (void*)g_ai_screen, (void*)p->error,
+                (void*)p->thinking, (void*)p->answer);
+
+    if (g_ai_screen == NULL) goto cleanup;
+
+    if (p->error) {
+        ai_chat_page_show_error(g_ai_screen, p->error);
+    } else {
+        /* All steps in guaranteed order within ONE callback */
+        ai_chat_page_begin_response(g_ai_screen);
+        if (p->thinking && p->thinking[0]) {
+            ai_chat_page_append_thinking(g_ai_screen, p->thinking);
+        }
+        ai_chat_page_finish_thinking(g_ai_screen);
+        if (p->answer && p->answer[0]) {
+            ai_chat_page_append_answer(g_ai_screen, p->answer);
+        }
+        ai_chat_page_finish_response(g_ai_screen);
+    }
+
+cleanup:
+    free(p->thinking);
+    free(p->answer);
+    free(p->error);
+    lv_free(p);
+}
+
+/* ── AI： 分配 UI 数据包（思考 + 回答 + 错误） ── */
+static ai_ui_packet_t * ai_pkt_new(const char *thinking, const char *answer,
+                                    const char *error)
+{
+    ai_ui_packet_t *p = lv_malloc_zeroed(sizeof(*p));
+    if (!p) return NULL;
+    if (thinking) p->thinking = strdup(thinking);
+    if (answer)   p->answer   = strdup(answer);
+    if (error)    p->error    = strdup(error);
+    return p;
+}
+
+/* ── AI： 接收线程 — HTTP POST → 解析 JSON → 拆分 <think> → lv_async_call ── */
+static void * ai_recv_thread(void * arg)
+{
+    const char *user_msg = (const char *)arg;
+
+    LV_LOG_USER("AI: thread start, msg='%s'", user_msg);
+
+    /* Build JSON body */
+    char *body = ai_build_body(user_msg);
+    if (!body) {
+        LV_LOG_USER("AI: body build failed");
+        ai_ui_packet_t *p = ai_pkt_new(NULL, NULL, "构建请求失败");
+        lv_async_call(ai_ui_show, p);
+        g_ai_running = false;
+        free((void*)user_msg);
+        return NULL;
+    }
+
+#ifdef __linux__
+    LV_LOG_USER("AI: POST to %s:%d", OLLAMA_HOST, OLLAMA_PORT);
+
+    HttpResponse *r = http_post(OLLAMA_HOST, OLLAMA_PORT, "/api/chat", body, OLLAMA_TMO);
+    free(body);
+
+    if (g_ai_stop) {
+        LV_LOG_USER("AI: stopped by user");
+        ai_ui_packet_t *p = ai_pkt_new(NULL, NULL, "已停止生成");
+        lv_async_call(ai_ui_show, p);
+        g_ai_running = false;
+        g_ai_stop = false;
+        free((void*)user_msg);
+        if (r) http_response_free(r);
+        return NULL;
+    }
+
+    ai_ui_packet_t *pkt = lv_malloc_zeroed(sizeof(*pkt));
+    if (!pkt) {
+        http_response_free(r);
+        g_ai_running = false;
+        free((void*)user_msg);
+        return NULL;
+    }
+
+    if (!r) {
+        LV_LOG_USER("AI: http_post returned NULL");
+        pkt->error = strdup("网络请求失败");
+        lv_async_call(ai_ui_show, pkt);
+        g_ai_running = false;
+        g_ai_stop = false;
+        free((void*)user_msg);
+        return NULL;
+    }
+
+    if (r->status_code < 0) {
+        LV_LOG_USER("AI: network error: %s", r->errmsg);
+        char err[300];
+        snprintf(err, sizeof(err), "网络错误: %s", r->errmsg);
+        pkt->error = strdup(err);
+        lv_async_call(ai_ui_show, pkt);
+        http_response_free(r);
+        g_ai_running = false;
+        g_ai_stop = false;
+        free((void*)user_msg);
+        return NULL;
+    }
+
+    if (r->status_code != 200) {
+        LV_LOG_USER("AI: HTTP %d, body=%.200s", r->status_code,
+                    r->body ? r->body : "(null)");
+        char err[512];
+        const char *body_hint = "";
+        if (r->body) {
+            char *err_msg = ai_json_val(r->body, "error");
+            body_hint = err_msg ? err_msg : "";
+        }
+        snprintf(err, sizeof(err), "服务器错误 HTTP %d%s%s",
+                 r->status_code,
+                 body_hint[0] ? ": " : "",
+                 body_hint[0] ? body_hint : "");
+        pkt->error = strdup(err);
+        if (body_hint[0]) free((void*)body_hint);
+        lv_async_call(ai_ui_show, pkt);
+        http_response_free(r);
+        g_ai_running = false;
+        g_ai_stop = false;
+        free((void*)user_msg);
+        return NULL;
+    }
+
+    LV_LOG_USER("AI: response %zu bytes", r->body_len);
+
+    /* Extract answer from JSON */
+    char *content = ai_json_val(r->body, "content");
+    LV_LOG_USER("AI: content=%.100s", content ? content : "(null)");
+
+    if (content && content[0]) {
+        /* Split thinking from answer (content is modified in-place) */
+        char *thinking = ai_split_think(content);
+        if (thinking && thinking[0]) {
+            LV_LOG_USER("AI: thinking %zu chars", strlen(thinking));
+            pkt->thinking = thinking;  /* transfer ownership */
+        } else if (thinking) {
+            free(thinking);
+        }
+
+        if (content[0]) {
+            LV_LOG_USER("AI: answer %zu chars", strlen(content));
+            pkt->answer = content;  /* transfer ownership */
+        } else {
+            free(content);
+        }
+    } else {
+        if (content) free(content);
+        LV_LOG_USER("AI: no content in response");
+        pkt->error = strdup("模型返回为空");
+    }
+
+    /* Add assistant reply to history */
+    char *raw_content = ai_json_val(r->body, "content");
+    if (raw_content) {
+        char *think = ai_split_think(raw_content);
+        free(think);
+        ai_hist_add("assistant", raw_content);
+        free(raw_content);
+    }
+
+    http_response_free(r);
+
+    /* SINGLE lv_async_call — guarantees order! */
+    lv_async_call(ai_ui_show, pkt);
+
+#else  /* PC / Windows stub */
+    LV_LOG_USER("AI: PC stub simulated response");
+    free(body);
+    {
+        ai_ui_packet_t *p = ai_pkt_new(
+            "分析用户问题…\n检索知识库：水产养殖手册 v2.3\n匹配合适的回答模板…\n置信度：0.94",
+            "这是模拟的AI回复。在Linux/ARM板卡上运行时会连接到真实的Ollama服务器。\n\n请确保：\n1. Ollama 服务已启动 (ollama serve)\n2. 已拉取模型 (ollama pull deepseek-r1:7b)\n3. 网络可达 " OLLAMA_HOST ":",
+            NULL);
+        lv_async_call(ai_ui_show, p);
+    }
+#endif
+
+    g_ai_running = false;
+    g_ai_stop = false;
+    free((void*)user_msg);
+    LV_LOG_USER("AI: thread done");
+    return NULL;
+}
+
+/* ── AI： 公开 API（由 ai_chat_page.c 和 ui.c 调用） ── */
+
+void app_action_ai_init(void)
+{
+    LV_LOG_USER("AI: Ollama client ready (host=%s, model=%s)", OLLAMA_HOST, OLLAMA_MODEL);
+}
+
+void app_action_ai_set_screen(lv_obj_t * screen)
+{
+    g_ai_screen = screen;
+}
+
+void app_action_ai_send(const char * message)
+{
+    if (g_ai_running) {
+        LV_LOG_USER("AI: already running, ignoring send");
+        return;
+    }
+    if (message == NULL || message[0] == '\0') return;
+
+    LV_LOG_USER("AI: send '%s'", message);
+
+    g_ai_running = true;
+    g_ai_stop    = false;
+
+    char *msg_copy = strdup(message);
+    if (!msg_copy) {
+        g_ai_running = false;
+        ai_ui_packet_t *p1 = ai_pkt_new(NULL, NULL, "内存不足");
+        lv_async_call(ai_ui_show, p1);
+        return;
+    }
+
+    if (pthread_create(&g_ai_thread, NULL, ai_recv_thread, msg_copy) != 0) {
+        free(msg_copy);
+        g_ai_running = false;
+        ai_ui_packet_t *p2 = ai_pkt_new(NULL, NULL, "线程创建失败");
+        lv_async_call(ai_ui_show, p2);
+        return;
+    }
+    pthread_detach(g_ai_thread);
+}
+
+void app_action_ai_stop(void)
+{
+    if (!g_ai_running) return;
+    LV_LOG_USER("AI: stop requested");
+    g_ai_stop = true;
 }
