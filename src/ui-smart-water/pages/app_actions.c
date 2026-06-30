@@ -943,6 +943,7 @@ void app_action_network_send(const char * message)
  ***********************************************************************/
 #include "ai-chat-page/ai_chat_page.h"
 #include "ai-chat-page/http_client.h"
+#include "ai-chat-page/ai_hardware.h"
 #include <pthread.h>
 
 /* ── AI： Ollama 服务器配置 ── */
@@ -954,7 +955,11 @@ void app_action_network_send(const char * message)
 #define OLLAMA_PORT       11434
 #define OLLAMA_MODEL      "deepseek-r1:7b"
 #define OLLAMA_TMO        300  /* 5 min — DeepSeek-R1 model loading can be slow */
-#define OLLAMA_SYSTEM_MSG "你是智慧水产养殖AI助手，精通水质管理、鱼病诊断、投喂策略、养殖技术等水产领域知识。请用简洁专业的中文回答。"
+#define OLLAMA_SYSTEM_MSG \
+    "你是智慧水产养殖AI助手，精通水质管理、鱼病诊断、投喂策略、养殖技术。" \
+    "硬件操作(开灯/蜂鸣器/传感器)由系统自动执行，" \
+    "用户消息中「(系统已执行: ...)」表示操作已完成，" \
+    "你只需根据结果自然回复，无需重复操作。"
 
 /* ── AI： 状态变量 ── */
 static lv_obj_t * g_ai_screen  = NULL;
@@ -1067,6 +1072,7 @@ static char* ai_split_think(char *text)
 
     char *src = text;
     char *dst = text;
+    bool hit_break = false;  /* true → memmove 已处理 NUL */
 
     while (*src) {
         /* Use strstr to find next <think> anywhere in remaining text */
@@ -1076,6 +1082,7 @@ static char* ai_split_think(char *text)
             size_t rest = strlen(src);
             if (dst != src) memmove(dst, src, rest + 1);
             LV_LOG_USER("AI: split_think no more tags, remaining=%zu", rest);
+            hit_break = true;
             break;
         }
 
@@ -1115,7 +1122,8 @@ static char* ai_split_think(char *text)
         }
     }
 
-    if (dst != text) *dst = '\0';
+    if (!hit_break && dst != text)
+        *dst = '\0';
 
     LV_LOG_USER("AI: split_think done, think=%zu chars, answer=%zu chars",
                 tlen, strlen(text));
@@ -1243,8 +1251,34 @@ static void * ai_recv_thread(void * arg)
 
     LV_LOG_USER("AI: thread start, msg='%s'", user_msg);
 
+    /* ── 意图预检测：常见硬件请求由 C 代码直接执行，AI 只管回复 ── */
+    const char *aug_msg = user_msg;
+    char *pre_result = NULL;
+    if (strstr(user_msg, "随机") && (strstr(user_msg, "LED") || strstr(user_msg, "灯")))
+        pre_result = ai_execute_action("led_random_on");
+    else if (strstr(user_msg, "切换蜂鸣器") || strstr(user_msg, "蜂鸣器开关"))
+        pre_result = ai_execute_action("buzzer_toggle");
+    else if (strstr(user_msg, "加速度") || strstr(user_msg, "偏转角") || strstr(user_msg, "姿态"))
+        pre_result = ai_execute_action("read_accel");
+    else if (strstr(user_msg, "按键") || strstr(user_msg, "按钮"))
+        pre_result = ai_execute_action("read_button");
+    /* 更多意图可以在此扩展 */
+
+    if (pre_result && pre_result[0] && strncmp(pre_result, "[错误]", 7) != 0) {
+        LV_LOG_USER("AI: pre-execute intent, result=%s", pre_result);
+        /* 把执行结果追加到用户消息中，AI 会在上下文中看到 */
+        size_t nlen = strlen(user_msg) + strlen(pre_result) + 64;
+        char *tmp = malloc(nlen);
+        if (tmp) {
+            snprintf(tmp, nlen, "%s\n(系统已执行: %s)", user_msg, pre_result);
+            aug_msg = tmp;
+        }
+    }
+    free(pre_result);
+
     /* Build JSON body */
-    char *body = ai_build_body(user_msg);
+    char *body = ai_build_body(aug_msg);
+    if (aug_msg != user_msg) free((void*)aug_msg);
     if (!body) {
         LV_LOG_USER("AI: body build failed");
         ai_ui_packet_t *p = ai_pkt_new(NULL, NULL, "构建请求失败");
@@ -1329,34 +1363,123 @@ static void * ai_recv_thread(void * arg)
 
     /* Extract answer from JSON */
     char *content = ai_json_val(r->body, "content");
-    LV_LOG_USER("AI: content=%.100s", content ? content : "(null)");
+    if (content) {
+        LV_LOG_USER("AI: content len=%zu", strlen(content));
+        LV_LOG_USER("AI: content text=%.120s", content);
+
+        /* 十六进制 dump 前 60 字节（排查隐藏字符/BOM/格式问题） */
+        char hex[256];
+        int hlen = 0;
+        for (int i = 0; i < 60 && content[i]; i++) {
+            hlen += snprintf(hex + hlen, sizeof(hex) - hlen,
+                             "%02X ", (unsigned char)content[i]);
+        }
+        LV_LOG_USER("AI: content hex(60)=%s", hex);
+
+        /* 检查是否包含 <action> / <think> 标签 */
+        LV_LOG_USER("AI: has_action=%d  has_think=%d",
+                    strstr(content, "[ACTION]") != NULL,
+                    strstr(content, "<think>")  != NULL);
+    } else {
+        LV_LOG_USER("AI: content is NULL!");
+    }
 
     if (content && content[0]) {
-        /* Split thinking from answer (content is modified in-place) */
+        /* ── 1. 先拆分 think（让 answer 和 think 分离） ── */
+        LV_LOG_USER("AI: step1 split_think, before: len=%zu", strlen(content));
         char *thinking = ai_split_think(content);
+        LV_LOG_USER("AI: after split_think, content len=%zu, think=%s",
+                    strlen(content),
+                    thinking ? (thinking[0] ? "yes" : "empty") : "none");
+
+        /* ── 2. 在 answer 中搜 [ACTION] ── */
+        LV_LOG_USER("AI: step2 split_actions in answer");
+        char *act_ans = ai_split_actions(content);
+        LV_LOG_USER("AI: answer actions: %s", act_ans ? act_ans : "(none)");
+
+        /* ── 3. 在 think 中只移除 [ACTION] 行，不执行（AI 在引用语法） ── */
         if (thinking && thinking[0]) {
-            LV_LOG_USER("AI: thinking %zu chars", strlen(thinking));
-            pkt->thinking = thinking;  /* transfer ownership */
-        } else if (thinking) {
-            free(thinking);
+            LV_LOG_USER("AI: step3 strip_actions in think");
+            ai_strip_actions(thinking);
+            LV_LOG_USER("AI: think after strip: len=%zu", strlen(thinking));
         }
 
+        /* ── 4. 动作结果即 answer 中执行的结果 ── */
+        char *action_results = act_ans;  /* 只有 answer 中执行的才是有效结果 */
+
+        /* ── 5. 如果 think 内容被移空则释放 ── */
+        if (thinking && !thinking[0]) {
+            free(thinking);
+            thinking = NULL;
+        }
+        if (thinking) {
+            pkt->thinking = thinking;  /* transfer ownership */
+        }
+
+        /* ── 6. 去掉前导空白 ── */
+        char *trimmed = content;
+        while (*trimmed == '\n' || *trimmed == '\r'
+               || *trimmed == ' '  || *trimmed == '\t')
+            trimmed++;
+        if (trimmed != content) {
+            memmove(content, trimmed, strlen(trimmed) + 1);
+            LV_LOG_USER("AI: trimmed %d leading whitespace chars",
+                        (int)(trimmed - content));
+        }
+
+        /* ── 7. 剩余内容即为回答 ── */
         if (content[0]) {
-            LV_LOG_USER("AI: answer %zu chars", strlen(content));
-            pkt->answer = content;  /* transfer ownership */
+            LV_LOG_USER("AI: answer len=%zu, text=%.80s",
+                        strlen(content), content);
+            pkt->answer = content;
+        } else if (action_results && action_results[0]) {
+            /* answer 为空但有动作结果 → 用动作结果当回答 */
+            LV_LOG_USER("AI: answer empty, using action result as answer");
+            pkt->answer = strdup(action_results);
+            free(content);
+        } else if (pkt->thinking && pkt->thinking[0]) {
+            /* 从 think 里截取（最多 400 字）当答案 */
+            size_t tlen = strlen(pkt->thinking);
+            size_t show = tlen > 400 ? 400 : tlen;
+            LV_LOG_USER("AI: answer empty, fallback from think (%zu chars)",
+                        show);
+            pkt->answer = malloc(show + 1);
+            if (pkt->answer) {
+                memcpy(pkt->answer, pkt->thinking, show);
+                pkt->answer[show] = '\0';
+            }
+            free(content);
         } else {
+            LV_LOG_USER("AI: no answer and no think!");
+            pkt->error = strdup("模型未生成有效回答");
             free(content);
         }
+
+        /* ── 8. 传感器结果注入历史（LED/蜂鸣器用户可见，不注入）── */
+        if (action_results && action_results[0]) {
+            if (strstr(action_results, "[水温]")        ||
+                strstr(action_results, "[pH]")          ||
+                strstr(action_results, "[加速度")       ||
+                strstr(action_results, "[按键]")        ||
+                strstr(action_results, "[溶解氧]")) {
+                ai_hist_add("user", action_results);
+                LV_LOG_USER("AI: sensor result injected into history");
+            } else {
+                LV_LOG_USER("AI: LED/buzzer result, skip history injection");
+            }
+        }
+        free(action_results);
     } else {
         if (content) free(content);
         LV_LOG_USER("AI: no content in response");
         pkt->error = strdup("模型返回为空");
     }
 
-    /* Add assistant reply to history */
+    /* Add assistant reply to history (strip [ACTION] & <think>, no exec) */
     char *raw_content = ai_json_val(r->body, "content");
     if (raw_content) {
-        char *think = ai_split_think(raw_content);
+        ai_strip_actions(raw_content);  /* 只移除 [ACTION] 行，不执行 */
+        char *think = ai_split_think(raw_content);  /* strip <think> */
         free(think);
         ai_hist_add("assistant", raw_content);
         free(raw_content);

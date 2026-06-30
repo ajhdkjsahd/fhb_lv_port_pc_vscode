@@ -290,8 +290,11 @@ lv_obj_t * ai_chat_page_create(ai_chat_back_cb_t  back_cb,
         "溶氧量偏低怎么办？",
         "如何判断鱼是否生病？",
         "今天该喂多少饲料？",
+        "帮我打开随机其中一个LED灯",
+        "读取加速度传感器原始数据并展示",
+        "切换蜂鸣器开关状态",
     };
-    for (int qi = 0; qi < 4; qi++) {
+    for (int qi = 0; qi < 7; qi++) {
         lv_obj_t * qbtn = lv_button_create(quick_bar);
         lv_obj_set_size(qbtn, LV_SIZE_CONTENT, 30);
         lv_obj_set_style_pad_hor(qbtn, 12, 0);
@@ -1024,7 +1027,8 @@ static chat_msg_slot_t * add_msg_slot(ai_chat_ctx_t * ctx, bool is_user)
 static lv_obj_t * create_think_panel(lv_obj_t * parent, ai_chat_ctx_t * ctx)
 {
     lv_obj_t * panel = lv_obj_create(parent);
-    lv_obj_set_size(panel, lv_pct(100), LV_SIZE_CONTENT);
+    lv_obj_set_size(panel, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_style_min_width(panel, BUBBLE_MAX_W - 20, 0);
     lv_obj_set_style_bg_color(panel, lv_color_hex(0x0B1A24), 0);
     lv_obj_set_style_border_width(panel, 0, 0);
     lv_obj_set_style_border_side(panel, LV_BORDER_SIDE_LEFT, 0);
@@ -1040,7 +1044,7 @@ static lv_obj_t * create_think_panel(lv_obj_t * parent, ai_chat_ctx_t * ctx)
 
     /* Header */
     lv_obj_t * header = lv_obj_create(panel);
-    lv_obj_set_size(header, lv_pct(100), 30);
+    lv_obj_set_size(header, BUBBLE_MAX_W - 20, 30);
     lv_obj_set_style_bg_color(header, lv_color_hex(0x0B1A24), 0);
     lv_obj_set_style_border_width(header, 0, 0);
     lv_obj_set_flex_flow(header, LV_FLEX_FLOW_ROW);
@@ -1079,7 +1083,7 @@ static lv_obj_t * create_think_panel(lv_obj_t * parent, ai_chat_ctx_t * ctx)
 
     /* Body */
     lv_obj_t * body = lv_obj_create(panel);
-    lv_obj_set_size(body, lv_pct(100), LV_SIZE_CONTENT);
+    lv_obj_set_size(body, BUBBLE_MAX_W - 20, LV_SIZE_CONTENT);
     lv_obj_set_style_bg_color(body, lv_color_hex(0x0B1A24), 0);
     lv_obj_set_style_border_width(body, 0, 0);
     lv_obj_set_style_border_side(body, LV_BORDER_SIDE_TOP, 0);
