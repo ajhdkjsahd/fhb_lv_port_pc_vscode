@@ -23,6 +23,7 @@
 #include "pages/network-page/network_page.h"
 #include "pages/ai-chat-page/ai_chat_page.h"
 #include "pages/sensor-page/sensor_page.h"
+#include "pages/app_mqtt.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -197,6 +198,12 @@ void ui_init(void)
 
     /* Sensor monitor page */
     g_sensor_screen   = sensor_page_create(nav_to_home);
+
+    /* 3.5. MQTT 传感器数据订阅（仅 ARM 板，配置见 app_mqtt.c 顶部宏；
+     *       PC 上 app_mqtt_init 为空桩直接返回 false） */
+    if(!app_mqtt_init()) {
+        printf("[ui] MQTT unavailable — sensor cards will show '--'\n");
+    }
 
     /* 4. Start on login screen */
     lv_screen_load_anim(g_login_screen, PAGE_FADE);

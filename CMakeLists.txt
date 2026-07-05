@@ -46,6 +46,7 @@ option(LV_USE_LIBPNG "Use libpng to decode PNG" OFF)
 option(LV_USE_LIBJPEG_TURBO "Use libjpeg turbo to decode JPEG" OFF)
 option(LV_USE_FFMPEG "Use libffmpeg to display video using lv_ffmpeg" OFF)
 option(LV_USE_FREETYPE "Use freetype library" ON)
+option(USE_MQTT "Enable MQTT sensor data subscription (ARM board)" OFF)
 
 # Set C and C++ standards
 set(CMAKE_C_STANDARD 99)
@@ -128,6 +129,35 @@ if(LV_USE_FREETYPE)
     find_package(Freetype REQUIRED)
     target_include_directories(lvgl PUBLIC ${FREETYPE_INCLUDE_DIRS})
     list(APPEND MAIN_LIBS ${FREETYPE_LIBRARIES})
+endif()
+
+# Conditionally enable MQTT sensor data subscription (Eclipse Paho)
+# Usage (ARM cross-compile):
+#   cmake .. -DUSE_MQTT=ON -DPAHO_DIR=/path/to/paho-install
+if(USE_MQTT)
+    message(STATUS "MQTT sensor data: ENABLED")
+    target_compile_definitions(main PRIVATE APP_USE_MQTT)
+
+    # Paho install root — point to the paho-install/ dir produced by build_paho.sh
+    if(NOT DEFINED PAHO_DIR)
+        set(PAHO_DIR ${CMAKE_SOURCE_DIR}/src/gec6818_mqtt/paho-install)
+    endif()
+
+    # Find Paho C static libraries (cross-compiled for ARM)
+    file(GLOB PAHO_LIB_C "${PAHO_DIR}/lib/libpaho-mqtt3c*.a")
+    file(GLOB PAHO_LIB_A "${PAHO_DIR}/lib/libpaho-mqtt3a*.a")
+    if(NOT PAHO_LIB_C OR NOT PAHO_LIB_A)
+        message(FATAL_ERROR
+            "USE_MQTT=ON but Paho libs not found under ${PAHO_DIR}/lib/.\n"
+            "Run build_paho.sh first to cross-compile Paho for ARM.")
+    endif()
+
+    target_include_directories(main PRIVATE ${PAHO_DIR}/include)
+    list(APPEND MAIN_LIBS ${PAHO_LIB_C} ${PAHO_LIB_A} pthread dl)
+    message(STATUS "  Paho lib C : ${PAHO_LIB_C}")
+    message(STATUS "  Paho lib A : ${PAHO_LIB_A}")
+else()
+    message(STATUS "MQTT sensor data: DISABLED (simulation fallback)")
 endif()
 
 if(LVGL_PRO_PROJECT_DIR)

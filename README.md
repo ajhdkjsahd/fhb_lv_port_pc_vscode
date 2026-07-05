@@ -10,7 +10,7 @@
 |------|------|
 | 登录/注册 | 账号密码验证、注册、成功弹窗动画 |
 | **首页仪表盘** | **海洋沉浸式导航枢纽 — canvas 双层波浪、气泡上浮、鱼影游动、玻璃质感欢迎卡、霓虹药丸导航坞、WiFi 网络状态指示器、离屏自动暂停优化** |
-| **传感器数据监测** | **6 路传感器实时展示（温度/湿度/光照/溶解氧/pH/氨氮），三态告警配色，光照卡片发光特效，实时模拟 + 硬件接入钩子** |
+| **传感器数据监测** | **6 路传感器实时展示 + MQTT 订阅真数据（未收到时不显示），三态告警配色，光照发光特效** |
 | **AI 智能助手** | DeepSeek-R1:7B 对话、思考过程折叠、Ollama HTTP、流式显示 |
 | 视频监控 | mplayer 视频播放、滑动切换视频、封面预览、进度条 |
 | 图片浏览 | 文件夹自动扫描、滑动切换、圆点指示器、缓存预加载 |
@@ -50,8 +50,52 @@
 | 氨氮 | mg/L | fa-flask | <0.5 | >1.0 |
 
 - **三态告警配色**：正常青绿 / 预警黄 / 告警红，数值越限时边框、图标、状态点、进度条、数值颜色同步变化
-- **实时模拟**：`app_action_sensor_read()` 提供随机游走模拟数据，1 秒刷新
-- **硬件钩子**：接入真实传感器只需替换 `app_actions.c` 中 `app_action_sensor_read()` 的取值实现
+- **MQTT 真数据**：`app_mqtt.c` 订阅传感器 JSON，Paho 回调 → `app_action_sensor_set()` → 1 秒刷新；未收到时卡片显示 `"--"`
+- **PC 降级**：PC 编译不依赖 Paho 库，`app_mqtt_init()` 退化为空桩，传感器页不显示数据
+
+---
+
+### MQTT 传感器数据接入
+
+GEC6818 板卡通过 **Eclipse Paho MQTT C** 库订阅传感器数据，零模拟：
+
+```
+MQTT Broker (broker.emqx.io:1883)
+    ↑ publish {"temp":26.3,"humi":65.0,"light":72.0,"do":6.5,"ph":7.20,"nh3n":0.30}
+    │
+[Sensor Node / ESP32]
+    │
+    ↓ subscribe "fhb/gec6818/sensors"
+[GEC6818 — LVGL App]
+    ├─ app_mqtt_init() → connect + subscribe
+    ├─ Paho 内部线程 → msg_arrived() → JSON 轻量解析 → app_action_sensor_set()
+    └─ sensor_page 1s 定时器 → app_action_sensor_read() → 显示
+```
+
+**配置**（`app_mqtt.c` 顶部宏）：
+
+```c
+#define MQTT_BROKER_ADDR  "mqtt://broker.emqx.io:1883"
+#define MQTT_CLIENT_ID    "fhb_gec6818_lvgl_001"
+#define MQTT_TOPIC        "fhb/gec6818/sensors"
+```
+
+**JSON 消息格式**（6 个键名，缺字段也行）：
+
+```json
+{"temp":26.3,"humi":65.0,"light":72.0,"do":6.5,"ph":"7.20","nh3n":0.30}
+```
+
+**ARM 编译**（需先交叉编译 Paho 库 → `paho-install/`，放到 `src/ui-smart-water/` 下）：
+
+```bash
+cmake -B build -DCMAKE_TOOLCHAIN_FILE=./user_cross_compile_setup.cmake -DUSE_MQTT=ON
+cmake --build build -j$(nproc)
+```
+
+PC 编译不需要 Paho：`app_mqtt.c` 在 `USE_MQTT=OFF` 时编译为空，`app_mqtt_init()` 直接返回 false。
+
+MQTT 参考实现见 `src/gec6818_mqtt/`（含 pub/sub demo、交叉编译脚本）。
 
 ---
 
@@ -89,11 +133,12 @@ src/ui-smart-water/
 ├── images/                      ← 图片资源（.png）
 └── pages/
     ├── app_fonts.c/h            ← FreeType 字体加载（kaiti_14/18/24/32 + fa6_20）
-    ├── app_actions.c/h          ← 业务逻辑回调（登录、视频、网络、WiFi、传感器模拟）
+    ├── app_actions.c/h          ← 业务逻辑回调（登录、视频、网络、WiFi、传感器数据存储）
     ├── app_keyboard.c/h         ← 拼音输入法键盘
     ├── app_popup.c/h            ← Toast 弹窗
     ├── register-page/           ← 登录 + 注册页面
     ├── home-page/               ← 首页（海洋沉浸式导航枢纽）
+    ├── app_mqtt.c/h             ← MQTT 传感器订阅（Paho C，ARM 板）
     ├── sensor-page/             ← 传感器数据监测页
     ├── video-page/              ← 视频监控页面
     ├── gallery-page/            ← 图片浏览页面

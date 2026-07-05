@@ -2,6 +2,16 @@
 build/
 bin/
 
+# Ignore Paho MQTT cross-compiled libraries (binary, rebuild with build_paho.sh)
+**/paho-install/
+**/paho-install-native/
+
+# Ignore MQTT demo build artifacts
+src/gec6818_mqtt/app_build/
+src/gec6818_mqtt/app_build_native/
+src/gec6818_mqtt/build_work/
+src/gec6818_mqtt/build_work_native/
+
 # Ignore all dot folders, with below exceptions
 .*/
 

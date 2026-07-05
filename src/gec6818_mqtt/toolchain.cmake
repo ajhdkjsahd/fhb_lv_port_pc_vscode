@@ -1,0 +1,16 @@
+# toolchain.cmake - GEC6818 交叉编译工具链配置
+# 编译器: arm-none-linux-gnueabi-gcc (Buildroot 2016.11, Cortex-A15, soft-float)
+# 用法: cmake -DCMAKE_TOOLCHAIN_FILE=toolchain.cmake ..
+
+set(CROSS_PREFIX arm-linux-)
+
+set(CMAKE_SYSTEM_NAME Linux)
+set(CMAKE_SYSTEM_PROCESSOR arm)
+
+set(CMAKE_C_COMPILER   ${CROSS_PREFIX}gcc)
+set(CMAKE_CXX_COMPILER ${CROSS_PREFIX}g++)
+
+set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)

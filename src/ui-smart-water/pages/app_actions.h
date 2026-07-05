@@ -73,12 +73,18 @@ typedef enum {
     SENSOR_IDX_COUNT
 } sensor_idx_t;
 
-/** 读取一路传感器当前值（PC 与板卡均使用随机游走模拟）。
- *  接入真实硬件时，仅需替换 app_actions.c 中本函数的取值实现。
- *  idx   : sensor_idx_t 枚举值
- *  value : 输出当前数值
- *  返回 true 表示成功；idx 非法或 value 为 NULL 时返回 false */
+/** 读取一路传感器当前值。
+ *  优先级：MQTT 真实数据 > 随机游走模拟。
+ *  接入真实硬件时，MQTT 自动写入（app_mqtt.c 调用 app_action_sensor_set），
+ *  本函数自动切换到真实数据；未收到 MQTT 时继续模拟。 */
 bool app_action_sensor_read(sensor_idx_t idx, float * value);
+
+/** MQTT 模块写入真实传感器值（线程安全，可从 MQTT 回调线程调用）。
+ *  写入后 app_action_sensor_read 自动优先返回真实值。 */
+void app_action_sensor_set(sensor_idx_t idx, float value);
+
+/** MQTT 断连时重置所有传感器为模拟模式。 */
+void app_action_sensor_reset_all(void);
 
 #ifdef __cplusplus
 }
