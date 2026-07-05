@@ -1558,3 +1558,55 @@ void app_action_ai_stop(void)
     LV_LOG_USER("AI: stop requested");
     g_ai_stop = true;
 }
+
+/***********************************************************************
+ *  ╔══════════════════════════════════════════════════════════════╗
+ *  ║  分区 5：传感器数据 — 实时采集模拟                            ║
+ *  ║  页面：sensor_page.c                                          ║
+ *  ╚══════════════════════════════════════════════════════════════╝
+ *  PC/Windows 与 Linux/ARM 共用同一模拟逻辑（随机游走）。
+ *  接入真实传感器时，仅替换 app_action_sensor_read() 的取值即可，
+ *  量程与告警阈值表在 sensor_page.c 中维护（展示层）。
+ ***********************************************************************/
+#include <time.h>
+
+/* ── 传感器： 模拟状态（随机游走） ── */
+typedef struct {
+    float baseline;   /* 基准值，游走时被拉回此处 */
+    float amp;        /* 单步波动幅度 */
+    float min;        /* 量程下限（钳位） */
+    float max;        /* 量程上限（钳位） */
+    float cur;        /* 当前值 */
+} sim_state_t;
+
+static sim_state_t g_sim[SENSOR_IDX_COUNT];
+static bool g_sim_inited = false;
+
+static void sim_init(void)
+{
+    /*                baseline  amp    min    max     cur   */
+    g_sim[SENSOR_IDX_TEMP]  = (sim_state_t){ 26.0f,  0.40f, 0.0f, 40.0f,  26.0f  };
+    g_sim[SENSOR_IDX_HUMI]  = (sim_state_t){ 65.0f,  1.50f, 0.0f, 100.0f, 65.0f  };
+    g_sim[SENSOR_IDX_LIGHT] = (sim_state_t){ 72.0f,  3.00f, 0.0f, 100.0f, 72.0f  };
+    g_sim[SENSOR_IDX_DO]    = (sim_state_t){  6.5f,  0.25f, 0.0f, 20.0f,   6.5f  };
+    g_sim[SENSOR_IDX_PH]    = (sim_state_t){  7.2f,  0.06f, 0.0f, 14.0f,   7.2f  };
+    g_sim[SENSOR_IDX_NH3N]  = (sim_state_t){  0.30f, 0.05f, 0.0f,  5.0f,   0.30f };
+    srand((unsigned)time(NULL));
+    g_sim_inited = true;
+    LV_LOG_USER("sensor: simulator initialized (6 channels)");
+}
+
+bool app_action_sensor_read(sensor_idx_t idx, float * value)
+{
+    if(!g_sim_inited) sim_init();
+    if(idx < 0 || idx >= SENSOR_IDX_COUNT || value == NULL) return false;
+
+    sim_state_t * s = &g_sim[idx];
+    /* 随机游走：85% 继承当前值 + 15% 拉回基准 + 均匀噪声 */
+    float r = ((float)(rand() % 1000) / 1000.0f - 0.5f) * 2.0f * s->amp;
+    s->cur = s->cur * 0.85f + s->baseline * 0.15f + r;
+    if(s->cur < s->min) s->cur = s->min;
+    if(s->cur > s->max) s->cur = s->max;
+    *value = s->cur;
+    return true;
+}

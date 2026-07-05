@@ -14,6 +14,7 @@ void app_fonts_init(void);
 const lv_font_t * app_font_kaiti_14(void);
 const lv_font_t * app_font_kaiti_18(void);
 const lv_font_t * app_font_kaiti_24(void);
+const lv_font_t * app_font_kaiti_32(void);
 const lv_font_t * app_font_fa6_20(void);
 
 #ifdef __cplusplus

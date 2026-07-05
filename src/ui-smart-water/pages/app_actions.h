@@ -61,6 +61,25 @@ void app_action_ai_set_screen(lv_obj_t * screen);
 void app_action_ai_send(const char * message);
 void app_action_ai_stop(void);
 
+/* ---- Sensor Data (传感器数据) ---- */
+/* 6 路传感器索引：温度 / 湿度 / 光照 / 溶解氧 / pH / 氨氮 */
+typedef enum {
+    SENSOR_IDX_TEMP = 0,   /* 温度     °C    */
+    SENSOR_IDX_HUMI,       /* 湿度     %     */
+    SENSOR_IDX_LIGHT,      /* 光照     %     */
+    SENSOR_IDX_DO,         /* 溶解氧   mg/L  */
+    SENSOR_IDX_PH,         /* pH值     —     */
+    SENSOR_IDX_NH3N,       /* 氨氮     mg/L  */
+    SENSOR_IDX_COUNT
+} sensor_idx_t;
+
+/** 读取一路传感器当前值（PC 与板卡均使用随机游走模拟）。
+ *  接入真实硬件时，仅需替换 app_actions.c 中本函数的取值实现。
+ *  idx   : sensor_idx_t 枚举值
+ *  value : 输出当前数值
+ *  返回 true 表示成功；idx 非法或 value 为 NULL 时返回 false */
+bool app_action_sensor_read(sensor_idx_t idx, float * value);
+
 #ifdef __cplusplus
 }
 #endif

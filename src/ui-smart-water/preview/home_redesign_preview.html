@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Smart Water — 首页重构预览（海洋沉浸）</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<style>
+  :root {
+    --abyss-1: #02060E;
+    --abyss-2: #051428;
+    --abyss-3: #0A1F38;
+    --neon:    #00E5FF;
+    --teal:    #00D4AA;
+    --blue:    #0288D1;
+    --text:    #E6F2EE;
+    --text2:   #8FB8C0;
+    --text3:   #4A6A72;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: 'KaiTi','STKaiti','Microsoft YaHei','Noto Sans SC',sans-serif;
+    background:#070D16; display:flex; flex-direction:column; align-items:center;
+    padding:24px; gap:12px; min-height:100vh;
+  }
+  .page-label { color:#6A8A92; font-size:14px; font-weight:600; }
+  .screen {
+    width:800px; height:480px; border-radius:18px; overflow:hidden; position:relative;
+    box-shadow:0 24px 70px rgba(0,0,0,0.6), 0 0 0 1px rgba(0,229,255,0.08);
+    background:radial-gradient(120% 80% at 50% -10%, #0A2640 0%, var(--abyss-2) 45%, var(--abyss-1) 100%);
+  }
+
+  /* ===== 光柱（caustic rays） ===== */
+  .rays { position:absolute; inset:0; overflow:hidden; pointer-events:none; opacity:.5; }
+  .ray {
+    position:absolute; top:-30%; width:60px; height:140%;
+    background:linear-gradient(180deg, rgba(0,229,255,0.10), rgba(0,229,255,0));
+    transform-origin:top center; filter:blur(8px);
+    animation:sway 7s ease-in-out infinite;
+  }
+  .ray.r1{ left:14%; transform:rotate(8deg);  animation-delay:0s; }
+  .ray.r2{ left:42%; transform:rotate(-6deg); animation-delay:-2s; width:90px;}
+  .ray.r3{ left:72%; transform:rotate(10deg); animation-delay:-4s; width:50px;}
+  @keyframes sway { 0%,100%{ opacity:.35; } 50%{ opacity:.7; } }
+
+  /* ===== 气泡 ===== */
+  .bubbles { position:absolute; inset:0; pointer-events:none; }
+  .bubble {
+    position:absolute; bottom:-20px; border-radius:50%;
+    background:radial-gradient(circle at 35% 30%, rgba(255,255,255,0.6), rgba(0,229,255,0.15) 60%, rgba(0,229,255,0.02));
+    border:1px solid rgba(0,229,255,0.25);
+    box-shadow:0 0 8px rgba(0,229,255,0.2);
+    animation:rise linear infinite;
+  }
+  @keyframes rise {
+    0%   { transform:translateY(0) translateX(0); opacity:0; }
+    10%  { opacity:.8; }
+    90%  { opacity:.5; }
+    100% { transform:translateY(-520px) translateX(var(--drift,0px)); opacity:0; }
+  }
+
+  /* ===== 鱼 ===== */
+  .fish { position:absolute; color:var(--teal); text-shadow:0 0 10px rgba(0,212,170,0.5); opacity:.55; }
+  .fish.f1 { top:120px; font-size:22px; animation:swim1 18s linear infinite; }
+  .fish.f2 { top:210px; font-size:16px; color:var(--neon); animation:swim2 24s linear infinite; opacity:.4; }
+  .fish.f3 { top:300px; font-size:18px; animation:swim1 30s linear infinite; animation-delay:-8s; opacity:.35; }
+  @keyframes swim1 { 0%{ left:-40px; } 50%{ transform:translateY(-6px); } 100%{ left:840px; } }
+  @keyframes swim2 { 0%{ left:840px; transform:scaleX(-1);} 50%{ transform:scaleX(-1) translateY(8px);} 100%{ left:-40px; transform:scaleX(-1);} }
+
+  /* ===== 顶部状态 ===== */
+  .topbar { position:absolute; top:16px; left:0; right:0; display:flex; justify-content:space-between; padding:0 22px; z-index:5; }
+  .brand-mini { display:flex; align-items:center; gap:8px; color:var(--text2); font-size:12px; letter-spacing:2px; }
+  .brand-mini i { color:var(--neon); }
+  .status-pill {
+    display:flex; align-items:center; gap:6px; height:26px; padding:0 12px;
+    background:rgba(8,28,40,0.5); border:1px solid rgba(0,229,255,0.2); border-radius:13px;
+    color:var(--neon); font-size:12px; backdrop-filter:blur(6px);
+  }
+  .status-dot { width:7px; height:7px; border-radius:50%; background:var(--teal); box-shadow:0 0 8px var(--teal); animation:blink 1.6s ease-in-out infinite; }
+  @keyframes blink { 0%,100%{opacity:.4;} 50%{opacity:1;} }
+
+  /* ===== 玻璃欢迎卡 ===== */
+  .glass {
+    position:absolute; top:74px; left:50%; transform:translateX(-50%);
+    width:560px; padding:26px 32px; border-radius:22px;
+    background:linear-gradient(160deg, rgba(10,40,56,0.55), rgba(6,20,32,0.35));
+    border:1px solid rgba(0,229,255,0.28);
+    backdrop-filter:blur(18px);
+    box-shadow:0 0 50px rgba(0,229,255,0.12), inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -1px 0 rgba(0,229,255,0.08);
+    display:flex; flex-direction:column; align-items:center; gap:10px; z-index:4;
+  }
+  .logo {
+    width:64px; height:64px; border-radius:50%;
+    background:linear-gradient(160deg, var(--teal), var(--blue));
+    display:flex; align-items:center; justify-content:center; color:#fff; font-size:30px;
+    box-shadow:0 0 30px rgba(0,212,170,0.6), inset 0 1px 0 rgba(255,255,255,0.4);
+    animation:logoFloat 4s ease-in-out infinite;
+  }
+  @keyframes logoFloat { 0%,100%{ transform:translateY(0); } 50%{ transform:translateY(-5px); } }
+  .title {
+    font-size:26px; color:var(--text); font-weight:600; letter-spacing:3px;
+    text-shadow:0 0 18px rgba(0,229,255,0.45);
+  }
+  .subtitle { font-size:12px; color:var(--text3); letter-spacing:4px; }
+  .divider { width:120px; height:1px; background:linear-gradient(90deg, transparent, var(--neon), transparent); margin:2px 0; opacity:.6; }
+  .tagline { font-size:15px; color:var(--text2); letter-spacing:2px; }
+  .tagline b { color:var(--neon); font-weight:normal; }
+
+  /* ===== 导航 dock ===== */
+  .dock {
+    position:absolute; left:50%; bottom:84px; transform:translateX(-50%);
+    display:flex; gap:10px; padding:10px 14px; border-radius:18px; z-index:6;
+    background:rgba(6,18,28,0.5); border:1px solid rgba(0,229,255,0.18);
+    backdrop-filter:blur(12px);
+    box-shadow:0 8px 30px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.06);
+  }
+  .pill {
+    width:128px; height:64px; border-radius:12px; cursor:pointer;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px;
+    background:linear-gradient(160deg, rgba(0,212,170,0.14), rgba(2,136,209,0.08));
+    border:1px solid rgba(0,229,255,0.18); color:var(--text);
+    transition:all .25s ease; position:relative; overflow:hidden;
+  }
+  .pill i { font-size:20px; color:var(--neon); text-shadow:0 0 10px rgba(0,229,255,0.5); }
+  .pill span { font-size:14px; letter-spacing:1px; }
+  .pill::before {
+    content:''; position:absolute; inset:0; background:linear-gradient(160deg, rgba(0,229,255,0.25), transparent 60%);
+    opacity:0; transition:opacity .25s;
+  }
+  .pill:hover { transform:translateY(-3px); border-color:var(--neon); box-shadow:0 6px 20px rgba(0,229,255,0.35); }
+  .pill:hover::before { opacity:1; }
+
+  /* ===== 波浪 ===== */
+  .waves { position:absolute; left:0; right:0; bottom:0; height:80px; z-index:3; pointer-events:none; }
+  .wave-layer { position:absolute; left:0; bottom:0; width:200%; height:80px; }
+  .wave-back  { animation:waveMove 12s linear infinite; opacity:.45; }
+  .wave-front { animation:waveMove 8s linear infinite reverse; opacity:.7; }
+  @keyframes waveMove { 0%{ transform:translateX(0); } 100%{ transform:translateX(-50%); } }
+</style>
+</head>
+<body>
+  <div class="page-label">智慧水产养殖系统 — 首页重构（海洋沉浸 · 深海蓝+青色霓虹）800×480</div>
+  <div class="screen" id="screen">
+
+    <!-- 光柱 -->
+    <div class="rays">
+      <div class="ray r1"></div><div class="ray r2"></div><div class="ray r3"></div>
+    </div>
+
+    <!-- 气泡（JS 生成） -->
+    <div class="bubbles" id="bubbles"></div>
+
+    <!-- 鱼 -->
+    <i class="fa-solid fa-fish fish f1"></i>
+    <i class="fa-solid fa-fish fish f2"></i>
+    <i class="fa-solid fa-fish fish f3"></i>
+
+    <!-- 顶部状态 -->
+    <div class="topbar">
+      <div class="brand-mini"><i class="fa-solid fa-water"></i> SMART WATER</div>
+      <div class="status-pill"><span class="status-dot"></span>系统在线</div>
+    </div>
+
+    <!-- 玻璃欢迎卡 -->
+    <div class="glass">
+      <div class="logo"><i class="fa-solid fa-fish"></i></div>
+      <div class="title">智能水产养殖系统</div>
+      <div class="subtitle">AQUACULTURE  CONTROL  SYSTEM</div>
+      <div class="divider"></div>
+      <div class="tagline"><b>实时监控</b> · <b>智能预警</b> · <b>远程控制</b></div>
+    </div>
+
+    <!-- 导航 dock -->
+    <div class="dock">
+      <div class="pill"><i class="fa-solid fa-play"></i><span>视频监控</span></div>
+      <div class="pill"><i class="fa-solid fa-image"></i><span>图片浏览</span></div>
+      <div class="pill"><i class="fa-solid fa-network-wired"></i><span>网络通讯</span></div>
+      <div class="pill"><i class="fa-solid fa-robot"></i><span>AI助手</span></div>
+      <div class="pill"><i class="fa-solid fa-gauge-high"></i><span>传感器</span></div>
+    </div>
+
+    <!-- 波浪 -->
+    <div class="waves">
+      <svg class="wave-layer wave-back" viewBox="0 0 1600 80" preserveAspectRatio="none">
+        <path d="M0,44 C200,28 400,60 800,44 C1200,28 1400,60 1600,44 L1600,80 L0,80 Z" fill="#0288D1"/>
+      </svg>
+      <svg class="wave-layer wave-front" viewBox="0 0 1600 80" preserveAspectRatio="none">
+        <path d="M0,50 C150,34 350,66 700,50 C1050,34 1250,66 1600,50 L1600,80 L0,80 Z" fill="#00D4AA"/>
+      </svg>
+    </div>
+
+  </div>
+
+<script>
+  // 生成气泡
+  const bc = document.getElementById('bubbles');
+  for(let i=0;i<14;i++){
+    const b = document.createElement('div');
+    b.className = 'bubble';
+    const size = 4 + Math.random()*12;
+    b.style.width = size+'px';
+    b.style.height = size+'px';
+    b.style.left = (Math.random()*100)+'%';
+    b.style.animationDuration = (6 + Math.random()*8)+'s';
+    b.style.animationDelay = (-Math.random()*10)+'s';
+    b.style.setProperty('--drift', (Math.random()*40-20)+'px');
+    bc.appendChild(b);
+  }
+</script>
+</body>
+</html>

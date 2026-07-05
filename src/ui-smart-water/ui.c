@@ -22,6 +22,7 @@
 #include "pages/gallery-page/gallery_page.h"
 #include "pages/network-page/network_page.h"
 #include "pages/ai-chat-page/ai_chat_page.h"
+#include "pages/sensor-page/sensor_page.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -35,6 +36,7 @@ static lv_obj_t * g_video_screen    = NULL;
 static lv_obj_t * g_gallery_screen  = NULL;
 static lv_obj_t * g_network_screen  = NULL;
 static lv_obj_t * g_ai_chat_screen  = NULL;
+static lv_obj_t * g_sensor_screen   = NULL;
 
 /* Image paths — dynamically scanned from images/ folder.
  * "A:" prefix uses LVGL's STDIO filesystem driver (LV_FS_STDIO_LETTER='A'). */
@@ -51,6 +53,7 @@ static void nav_to_video(void);
 static void nav_to_gallery(void);
 static void nav_to_network(void);
 static void nav_to_ai_chat(void);
+static void nav_to_sensor(void);
 static void on_login_success_done(void);
 
 /* Page transition: forward=slide-left, back=slide-right, fade for special */
@@ -156,7 +159,7 @@ void ui_init(void)
                                           on_login_success_done);
     g_register_screen = register_page_create(app_action_register_submit,
                                              nav_to_login);
-    g_home_screen     = home_page_create(nav_to_video, nav_to_gallery, nav_to_network, nav_to_ai_chat);
+    g_home_screen     = home_page_create(nav_to_video, nav_to_gallery, nav_to_network, nav_to_ai_chat, nav_to_sensor);
     /* Build cover paths from video scan results */
     int vcount = app_action_video_get_count();
     const char ** covers = NULL;
@@ -191,6 +194,9 @@ void ui_init(void)
                                             app_action_ai_stop);
     app_action_ai_set_screen(g_ai_chat_screen);
     app_action_ai_init();
+
+    /* Sensor monitor page */
+    g_sensor_screen   = sensor_page_create(nav_to_home);
 
     /* 4. Start on login screen */
     lv_screen_load_anim(g_login_screen, PAGE_FADE);
@@ -249,6 +255,13 @@ static void nav_to_ai_chat(void)
 {
     if(g_ai_chat_screen) {
         lv_screen_load_anim(g_ai_chat_screen, PAGE_FWD);
+    }
+}
+
+static void nav_to_sensor(void)
+{
+    if(g_sensor_screen) {
+        lv_screen_load_anim(g_sensor_screen, PAGE_FWD);
     }
 }
 

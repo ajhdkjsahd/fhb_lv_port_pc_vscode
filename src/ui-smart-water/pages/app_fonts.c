@@ -21,6 +21,7 @@
 static lv_font_t * kaiti_14 = NULL;
 static lv_font_t * kaiti_18 = NULL;
 static lv_font_t * kaiti_24 = NULL;
+static lv_font_t * kaiti_32 = NULL;
 static lv_font_t * fa6_20   = NULL;
 
 /**********************
@@ -56,6 +57,13 @@ void app_fonts_init(void)
                                        LV_FREETYPE_FONT_STYLE_NORMAL);
     if(kaiti_24) LV_LOG_USER("Loaded kaiti_24");
 
+    /* 大号字体，用于传感器数值等需要突出的数字 */
+    kaiti_32 = lv_freetype_font_create(FONT_SIMKAI,
+                                       LV_FREETYPE_FONT_RENDER_MODE_BITMAP,
+                                       32,
+                                       LV_FREETYPE_FONT_STYLE_NORMAL);
+    if(kaiti_32) LV_LOG_USER("Loaded kaiti_32");
+
     /* Load FA6 icon font */
     fa6_20 = lv_freetype_font_create(FONT_FA6,
                                      LV_FREETYPE_FONT_RENDER_MODE_BITMAP,
@@ -67,4 +75,5 @@ void app_fonts_init(void)
 const lv_font_t * app_font_kaiti_14(void) { return kaiti_14; }
 const lv_font_t * app_font_kaiti_18(void) { return kaiti_18; }
 const lv_font_t * app_font_kaiti_24(void) { return kaiti_24; }
+const lv_font_t * app_font_kaiti_32(void) { return kaiti_32; }
 const lv_font_t * app_font_fa6_20(void)   { return fa6_20; }

@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Smart Water — 传感器数据监测页 预览</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<style>
+  :root {
+    --bg: #060E14;
+    --card: #0A1620;
+    --accent: #00D4AA;
+    --accent2: #0288D1;
+    --warn: #FFB800;
+    --alarm: #FF4455;
+    --text: #E6F2EE;
+    --text2: #9AB8B0;
+    --text3: #5A7A72;
+    --border: #1C2E36;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: 'KaiTi', 'STKaiti', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+    background: #0D1117;
+    display:flex; flex-direction:column; align-items:center;
+    padding: 24px; gap: 12px; min-height: 100vh;
+  }
+  .page-label { color: var(--text2); font-size: 14px; font-weight: 600; }
+  .screen {
+    width: 800px; height: 480px; border-radius: 16px;
+    overflow: hidden; position: relative;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    background: var(--bg);
+    display:flex; flex-direction:column;
+  }
+
+  /* ===== HEADER ===== */
+  .header {
+    position:relative;
+    display:flex; flex-direction:column; align-items:center;
+    padding: 20px 16px 10px;
+    gap: 4px;
+  }
+  .back-btn {
+    position:absolute; top:16px; left:16px;
+    display:flex; align-items:center; gap:6px;
+    height:34px; padding:0 12px;
+    background: var(--card); border:1px solid var(--border); border-radius:8px;
+    color: var(--text2); font-size:14px;
+  }
+  .back-btn i { font-size:14px; }
+  .live-badge {
+    position:absolute; top:18px; right:16px;
+    display:flex; align-items:center; gap:6px;
+    height:30px; padding:0 12px;
+    background: var(--card); border:1px solid var(--border); border-radius:10px;
+    color: var(--accent); font-size:13px;
+  }
+  .live-dot {
+    width:8px; height:8px; border-radius:50%; background: var(--accent);
+    box-shadow: 0 0 8px var(--accent);
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:0.3;} 50%{opacity:1;} }
+  .logo-circle {
+    width:46px; height:46px; border-radius:50%;
+    background: linear-gradient(180deg, var(--accent) 0%, var(--accent2) 100%);
+    box-shadow: 0 0 20px rgba(0,212,170,0.4);
+    display:flex; align-items:center; justify-content:center;
+    color:#fff; font-size:22px;
+  }
+  .title { font-size:22px; color: var(--text); font-weight:600; letter-spacing:1px; }
+  .subtitle { font-size:12px; color: var(--text3); letter-spacing:2px; }
+
+  /* ===== BODY GRID ===== */
+  .body {
+    flex:1; display:grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(2, 1fr);
+    gap: 12px; padding: 4px 16px 12px;
+  }
+  .card {
+    background: var(--card);
+    border:1px solid var(--border);
+    border-radius: 14px;
+    padding: 12px 14px;
+    display:flex; flex-direction:column; justify-content:space-between;
+    position:relative;
+    transition: border-color .4s, box-shadow .4s;
+  }
+  .card-top { display:flex; align-items:center; gap:8px; }
+  .icon-badge {
+    width:34px; height:34px; border-radius:9px;
+    background: rgba(0,212,170,0.12);
+    display:flex; align-items:center; justify-content:center;
+    color: var(--accent); font-size:17px; flex-shrink:0;
+    transition: background .4s, color .4s;
+  }
+  .name { font-size:15px; color: var(--text2); flex:1; }
+  .status-dot { width:9px; height:9px; border-radius:50%; background: var(--accent); box-shadow:0 0 6px currentColor; flex-shrink:0; }
+  .value-row { display:flex; align-items:baseline; gap:5px; margin-top:2px; }
+  .value { font-size:30px; color: var(--text); font-weight:600; line-height:1; letter-spacing:1px; }
+  .unit { font-size:13px; color: var(--text3); }
+  .bar { height:6px; border-radius:3px; background:#1C2E36; overflow:hidden; margin-top:6px; }
+  .bar-fill { height:100%; border-radius:3px; background: var(--accent); transition: width .6s ease, background .4s; }
+
+  /* status states */
+  .card.warn   { border-color: var(--warn); }
+  .card.warn .icon-badge   { background: rgba(255,184,0,0.14); color: var(--warn); }
+  .card.warn .status-dot    { background: var(--warn); color: var(--warn); }
+  .card.warn .bar-fill      { background: var(--warn); }
+  .card.warn .value         { color: var(--warn); }
+  .card.alarm  { border-color: var(--alarm); }
+  .card.alarm .icon-badge   { background: rgba(255,68,85,0.14); color: var(--alarm); }
+  .card.alarm .status-dot    { background: var(--alarm); color: var(--alarm); }
+  .card.alarm .bar-fill      { background: var(--alarm); }
+  .card.alarm .value         { color: var(--alarm); }
+
+  /* light card glow scales with value */
+  .card.light-card { box-shadow: 0 0 0px rgba(255,184,0,0); }
+
+  /* ===== FOOTER ===== */
+  .footer {
+    border-top:1px solid var(--border);
+    padding: 8px 16px;
+    display:flex; justify-content:center; align-items:center;
+    color: var(--text3); font-size:12px; letter-spacing:1px;
+  }
+</style>
+</head>
+<body>
+  <div class="page-label">智慧水产养殖系统 — 传感器数据监测页 (800×480)</div>
+  <div class="screen">
+    <!-- HEADER -->
+    <div class="header">
+      <div class="back-btn"><i class="fa-solid fa-chevron-left"></i>返回首页</div>
+      <div class="live-badge"><span class="live-dot"></span>实时监测</div>
+      <div class="logo-circle"><i class="fa-solid fa-gauge-high"></i></div>
+      <div class="title">传感器数据监测</div>
+      <div class="subtitle">REAL-TIME  SENSOR  MONITORING</div>
+    </div>
+
+    <!-- BODY: 6 sensor cards -->
+    <div class="body" id="body">
+      <!-- cards injected by JS -->
+    </div>
+
+    <!-- FOOTER -->
+    <div class="footer">实时数据 · 每秒刷新 · Smart Water Aquaculture System v1.0</div>
+  </div>
+
+<script>
+  // ---- Sensor metadata (mirrors the C page's static table) ----
+  const SENSORS = [
+    { name:'温度',   unit:'°C',   icon:'fa-temperature-half', min:0,   max:40,  safeLo:18,  safeHi:28,  warnLo:15,  warnHi:32,  dec:1 },
+    { name:'湿度',   unit:'%',    icon:'fa-droplet',          min:0,   max:100, safeLo:40,  safeHi:80,  warnLo:30,  warnHi:90,  dec:1 },
+    { name:'光照',   unit:'%',    icon:'fa-sun',              min:0,   max:100, safeLo:20,  safeHi:90,  warnLo:10,  warnHi:100, dec:1, light:true },
+    { name:'溶解氧', unit:'mg/L', icon:'fa-wind',             min:0,   max:20,  safeLo:5,   safeHi:8,   warnLo:3,   warnHi:20,  dec:1 },
+    { name:'pH值',   unit:'',     icon:'fa-vial',             min:0,   max:14,  safeLo:6.5, safeHi:8.5, warnLo:6,   warnHi:9,   dec:2 },
+    { name:'氨氮',   unit:'mg/L', icon:'fa-flask',            min:0,   max:5,   safeLo:0,   safeHi:0.5, warnLo:0,   warnHi:1.0, dec:2 },
+  ];
+
+  // simulation state (mirrors app_actions.c random walk)
+  const state = SENSORS.map(s => ({
+    base: ({'温度':26.0,'湿度':65.0,'光照':72.0,'溶解氧':6.5,'pH值':7.2,'氨氮':0.3})[s.name],
+    amp:  ({'温度':0.4,'湿度':1.5,'光照':3.0,'溶解氧':0.25,'pH值':0.06,'氨氮':0.05})[s.name],
+    cur:  ({'温度':26.0,'湿度':65.0,'光照':72.0,'溶解氧':6.5,'pH值':7.2,'氨氮':0.3})[s.name],
+  }));
+
+  // build cards
+  const body = document.getElementById('body');
+  const cards = [];
+  SENSORS.forEach((s, i) => {
+    const el = document.createElement('div');
+    el.className = 'card' + (s.light ? ' light-card' : '');
+    el.innerHTML = `
+      <div class="card-top">
+        <div class="icon-badge"><i class="fa-solid ${s.icon}"></i></div>
+        <div class="name">${s.name}</div>
+        <div class="status-dot"></div>
+      </div>
+      <div class="value-row">
+        <div class="value">--</div>
+        <div class="unit">${s.unit}</div>
+      </div>
+      <div class="bar"><div class="bar-fill" style="width:0%"></div></div>
+    `;
+    body.appendChild(el);
+    cards.push({ el, valEl: el.querySelector('.value'), fillEl: el.querySelector('.bar-fill') });
+  });
+
+  function statusOf(s, v) {
+    if (v < s.warnLo || v > s.warnHi) return 'alarm';
+    if ((v >= s.warnLo && v < s.safeLo) || (v > s.safeHi && v <= s.warnHi)) return 'warn';
+    return 'normal';
+  }
+
+  function tick() {
+    SENSORS.forEach((s, i) => {
+      const st = state[i];
+      // random walk: 85% carry + 15% pull to baseline + noise
+      const r = (Math.random() - 0.5) * 2 * st.amp;
+      st.cur = st.cur * 0.85 + st.base * 0.15 + r;
+      if (st.cur < s.min) st.cur = s.min;
+      if (st.cur > s.max) st.cur = s.max;
+
+      const v = st.cur;
+      const c = cards[i];
+      c.valEl.textContent = v.toFixed(s.dec);
+      const pct = Math.round((v - s.min) / (s.max - s.min) * 100);
+      c.fillEl.style.width = pct + '%';
+
+      const stt = statusOf(s, v);
+      c.el.classList.remove('warn', 'alarm');
+      if (stt === 'warn') c.el.classList.add('warn');
+      if (stt === 'alarm') c.el.classList.add('alarm');
+
+      // light card glow scales with value (0%..100% → 0..0.7 alpha warm glow)
+      if (s.light) {
+        const a = (v / 100) * 0.7;
+        c.el.style.boxShadow = `0 0 24px rgba(255,184,0,${a})`;
+      }
+    });
+  }
+
+  tick();
+  setInterval(tick, 1000);
+</script>
+</body>
+</html>
