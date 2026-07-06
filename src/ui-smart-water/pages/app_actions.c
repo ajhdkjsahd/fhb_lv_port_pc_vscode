@@ -953,7 +953,7 @@ void app_action_network_send(const char * message)
 #define OLLAMA_HOST       "localhost"
 #endif
 #define OLLAMA_PORT       11434
-#define OLLAMA_MODEL      "deepseek-r1:7b"
+#define OLLAMA_MODEL      "qwen2.5:7b"
 #define OLLAMA_TMO        300  /* 5 min — DeepSeek-R1 model loading can be slow */
 #define OLLAMA_SYSTEM_MSG \
     "你是智慧水产养殖AI助手，精通水质管理、鱼病诊断、投喂策略、养殖技术。" \
