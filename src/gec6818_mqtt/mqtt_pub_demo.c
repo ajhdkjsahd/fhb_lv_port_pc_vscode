@@ -16,8 +16,8 @@
 
 /* ===== 配置区（按需修改）===== */
 #define BROKER_ADDRESS "mqtt://broker.emqx.io:1883"
-#define CLIENT_ID       "gec6818_pub_001"
-#define TOPIC           "gec6818/test/data"
+#define CLIENT_ID       "fhb_gec6818_pub_001"
+#define TOPIC           "fhb/smart_aquaculture/sensor"
 #define QOS             1
 #define INTERVAL        3   /* 发布间隔(秒) */
 /* ============================== */
@@ -51,19 +51,24 @@ int main(int argc, char *argv[])
     printf("[信息] 连接成功! 开始向 '%s' 发布数据\n", TOPIC);
     printf("------------------------------------------\n");
 
-    /* 3. 循环发布（模拟温湿度采集）*/
+    /* 3. 循环发布（模拟 6 路传感器采集）*/
     int seq = 0;
     char payload[256];
     unsigned int seed = (unsigned int)time(NULL);
 
     while (1) {
-        /* 模拟传感器数据 */
-        float temp = 25.0 + (rand_r(&seed) % 100) / 10.0;   /* 25.0 ~ 34.9 */
-        float hum  = 50.0 + (rand_r(&seed) % 300) / 10.0;   /* 50.0 ~ 79.9 */
+        /* 模拟传感器数据（键名与 app_mqtt.c 的 s_keys[] 一致，全名）*/
+        float temperature = 25.0f + (rand_r(&seed) % 100) / 10.0f;  /* 25.0 ~ 34.9 °C  */
+        float humidity    = 50.0f + (rand_r(&seed) % 300) / 10.0f;  /* 50.0 ~ 79.9 %   */
+        float light       = (float)(rand_r(&seed) % 101);           /* 0 ~ 100 %       */
+        float do_val      = 4.0f + (rand_r(&seed) % 51) / 10.0f;    /* 4.0 ~ 9.0 mg/L  */
+        float ph          = 6.5f + (rand_r(&seed) % 21) / 10.0f;    /* 6.5 ~ 8.5       */
+        float nh3n        = (rand_r(&seed) % 101) / 100.0f;         /* 0.00 ~ 1.00 mg/L */
 
         snprintf(payload, sizeof(payload),
-                 "{\"device\":\"gec6818\",\"seq\":%d,\"temp\":%.1f,\"hum\":%.1f}",
-                 seq, temp, hum);
+                 "{\"seq\":%d,\"temperature\":%.1f,\"humidity\":%.1f,\"light\":%.0f,"
+                 "\"do\":%.1f,\"ph\":%.1f,\"nh3n\":%.2f}",
+                 seq, temperature, humidity, light, do_val, ph, nh3n);
 
         pubmsg.payload    = payload;
         pubmsg.payloadlen = (int)strlen(payload);

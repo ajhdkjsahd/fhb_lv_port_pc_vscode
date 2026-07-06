@@ -131,12 +131,11 @@ if(LV_USE_FREETYPE)
     list(APPEND MAIN_LIBS ${FREETYPE_LIBRARIES})
 endif()
 
-# Conditionally enable MQTT sensor data subscription (Eclipse Paho)
+# Conditionally enable MQTT sensor data subscription (Eclipse Paho + cJSON)
 # Usage (ARM cross-compile):
 #   cmake .. -DUSE_MQTT=ON -DPAHO_DIR=/path/to/paho-install
 if(USE_MQTT)
     message(STATUS "MQTT sensor data: ENABLED")
-    target_compile_definitions(main PRIVATE APP_USE_MQTT)
 
     # Paho install root — point to the paho-install/ dir produced by build_paho.sh
     if(NOT DEFINED PAHO_DIR)
@@ -152,10 +151,23 @@ if(USE_MQTT)
             "Run build_paho.sh first to cross-compile Paho for ARM.")
     endif()
 
-    target_include_directories(main PRIVATE ${PAHO_DIR}/include)
+    # cJSON — single-file JSON parser, vendored as source. No cross-compile step
+    # needed: it compiles with whatever compiler the project uses (PC or ARM).
+    set(CJSON_DIR ${CMAKE_SOURCE_DIR}/src/ui-smart-water/libs/cjson)
+    if(NOT EXISTS "${CJSON_DIR}/cJSON.c")
+        message(FATAL_ERROR
+            "USE_MQTT=ON but cJSON.c not found at ${CJSON_DIR}/cJSON.c.\n"
+            "Re-download cJSON v1.7.18 (cJSON.h + cJSON.c) into that directory.")
+    endif()
+
+    # NOTE: target_*() calls are deferred to after add_executable(main) below —
+    # CMake rejects target_compile_definitions/include_directories on a target
+    # before it is created.
+    list(APPEND MAIN_SOURCES ${CJSON_DIR}/cJSON.c)
     list(APPEND MAIN_LIBS ${PAHO_LIB_C} ${PAHO_LIB_A} pthread dl)
     message(STATUS "  Paho lib C : ${PAHO_LIB_C}")
     message(STATUS "  Paho lib A : ${PAHO_LIB_A}")
+    message(STATUS "  cJSON     : ${CJSON_DIR}/cJSON.c")
 else()
     message(STATUS "MQTT sensor data: DISABLED (simulation fallback)")
 endif()
@@ -182,6 +194,15 @@ endif()
 add_executable(main ${MAIN_SOURCES})
 target_compile_definitions(main PRIVATE LV_CONF_INCLUDE_SIMPLE)
 target_link_libraries(main ${MAIN_LIBS})
+
+# MQTT-specific target settings — must come AFTER add_executable(main), since
+# target_compile_definitions / target_include_directories require the target to
+# already exist (CMake errors otherwise). Fixes the latent bug where these were
+# called inside the USE_MQTT block before add_executable.
+if(USE_MQTT)
+    target_compile_definitions(main PRIVATE APP_USE_MQTT)
+    target_include_directories(main PRIVATE ${PAHO_DIR}/include ${CJSON_DIR})
+endif()
 
 # On Windows, GUI applications do not show a console by default,
 # which hides log output. This ensures a console is available for logging.
