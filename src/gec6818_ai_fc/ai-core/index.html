@@ -1,0 +1,1002 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ai-core · GEC6818 Function Calling 模块</title>
+<style>
+  :root {
+    --bg:        #FAFAF9;
+    --surface:   #FFFFFF;
+    --surface-2: #F4F2EE;
+    --border:    #E6E2DB;
+    --text:      #1F1E1D;
+    --text-2:    #5C5A55;
+    --text-3:    #8B8881;
+    --primary:   #534AB7;
+    --primary-light: #EEEDFE;
+    --teal:      #0F6E56;
+    --teal-light: #E1F5EE;
+    --amber:     #854F0B;
+    --amber-light: #FAEEDA;
+    --coral:     #993C1D;
+    --coral-light: #FAECE7;
+    --code-bg:   #1F1E1D;
+    --code-text: #E8E5DE;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    font-size: 15px;
+    -webkit-font-smoothing: antialiased;
+  }
+  /* 顶部进度条 */
+  .progress-bar {
+    position: fixed; top: 0; left: 0; height: 2px;
+    background: var(--primary); width: 0%; z-index: 1000;
+    transition: width 0.1s;
+  }
+  /* Hero */
+  .hero {
+    max-width: 1200px; margin: 0 auto;
+    padding: 80px 40px 60px;
+    border-bottom: 1px solid var(--border);
+  }
+  .hero-tag {
+    display: inline-block;
+    padding: 4px 12px;
+    background: var(--primary-light);
+    color: var(--primary);
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+    margin-bottom: 20px;
+  }
+  .hero h1 {
+    font-size: 38px;
+    font-weight: 600;
+    letter-spacing: -0.5px;
+    margin-bottom: 16px;
+    line-height: 1.2;
+  }
+  .hero p {
+    font-size: 17px;
+    color: var(--text-2);
+    max-width: 720px;
+    margin-bottom: 36px;
+  }
+  .hero-stats {
+    display: flex; gap: 32px; flex-wrap: wrap;
+  }
+  .hero-stat {
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .hero-stat-num {
+    font-size: 28px; font-weight: 600;
+    color: var(--primary);
+    font-variant-numeric: tabular-nums;
+  }
+  .hero-stat-label {
+    font-size: 12px;
+    color: var(--text-3);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  /* 主容器 */
+  .container {
+    max-width: 1200px; margin: 0 auto;
+    padding: 40px;
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    gap: 60px;
+  }
+  /* 左侧导航 */
+  nav.toc {
+    position: sticky; top: 40px;
+    align-self: start;
+    max-height: calc(100vh - 80px);
+    overflow-y: auto;
+    padding-right: 12px;
+  }
+  nav.toc h3 {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-3);
+    margin-bottom: 14px;
+    font-weight: 600;
+  }
+  nav.toc ul { list-style: none; }
+  nav.toc li { margin-bottom: 6px; }
+  nav.toc a {
+    display: block;
+    padding: 6px 12px;
+    color: var(--text-2);
+    text-decoration: none;
+    font-size: 13px;
+    border-radius: 6px;
+    border-left: 2px solid transparent;
+    transition: all 0.15s;
+  }
+  nav.toc a:hover {
+    background: var(--surface-2);
+    color: var(--text);
+  }
+  nav.toc a.active {
+    color: var(--primary);
+    border-left-color: var(--primary);
+    background: var(--primary-light);
+    font-weight: 500;
+  }
+  /* 主内容 */
+  main { min-width: 0; }
+  section {
+    margin-bottom: 64px;
+    scroll-margin-top: 40px;
+  }
+  section h2 {
+    font-size: 24px;
+    font-weight: 600;
+    margin-bottom: 20px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+    letter-spacing: -0.3px;
+  }
+  section h3 {
+    font-size: 17px;
+    font-weight: 600;
+    margin: 28px 0 12px;
+    color: var(--text);
+  }
+  section p {
+    margin-bottom: 14px;
+    color: var(--text);
+  }
+  section p.subtle { color: var(--text-2); }
+  /* 表格 */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    font-size: 14px;
+  }
+  th, td {
+    padding: 12px 16px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  th {
+    background: var(--surface-2);
+    font-weight: 600;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-2);
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--surface-2); }
+  /* 代码块 */
+  pre {
+    background: var(--code-bg);
+    color: var(--code-text);
+    padding: 18px 22px;
+    border-radius: 10px;
+    overflow-x: auto;
+    margin: 16px 0;
+    font-size: 13px;
+    line-height: 1.6;
+    font-family: "JetBrains Mono", "Fira Code", Consolas, monospace;
+  }
+  pre code { font-family: inherit; }
+  :not(pre) > code {
+    background: var(--surface-2);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 13px;
+    font-family: "JetBrains Mono", Consolas, monospace;
+    color: var(--primary);
+  }
+  /* 简单语法高亮 */
+  .k { color: #C792EA; }       /* keyword */
+  .s { color: #C3E88D; }       /* string */
+  .c { color: #6B7A8F; font-style: italic; }  /* comment */
+  .t { color: #82AAFF; }       /* type */
+  .f { color: #FFCB6B; }       /* function */
+  .n { color: #F78C6C; }       /* number */
+  /* 卡片 */
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 14px;
+    margin: 20px 0;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+    transition: all 0.15s;
+  }
+  .card:hover {
+    border-color: var(--primary);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(83, 74, 183, 0.08);
+  }
+  .card-title {
+    font-weight: 600;
+    font-family: "JetBrains Mono", Consolas, monospace;
+    font-size: 13px;
+    color: var(--primary);
+    margin-bottom: 4px;
+  }
+  .card-desc {
+    font-size: 13px;
+    color: var(--text-2);
+    margin-bottom: 8px;
+    line-height: 1.5;
+  }
+  .card-meta {
+    font-size: 11px;
+    color: var(--text-3);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  /* 步骤 */
+  .steps {
+    counter-reset: step;
+    margin: 20px 0;
+  }
+  .step {
+    position: relative;
+    padding-left: 44px;
+    margin-bottom: 20px;
+    counter-increment: step;
+  }
+  .step::before {
+    content: counter(step);
+    position: absolute;
+    left: 0; top: 0;
+    width: 28px; height: 28px;
+    background: var(--primary);
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .step h4 {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+  .step p {
+    font-size: 14px;
+    color: var(--text-2);
+    margin: 0;
+  }
+  /* SVG 架构图容器 */
+  .arch-svg {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    margin: 20px 0;
+  }
+  .arch-svg svg { width: 100%; height: auto; }
+  /* 标签 */
+  .tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+  }
+  .tag-purple { background: var(--primary-light); color: var(--primary); }
+  .tag-teal   { background: var(--teal-light);   color: var(--teal); }
+  .tag-amber  { background: var(--amber-light);  color: var(--amber); }
+  .tag-coral  { background: var(--coral-light);  color: var(--coral); }
+  /* FAQ */
+  .faq-item {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 10px;
+    background: var(--surface);
+    overflow: hidden;
+  }
+  .faq-q {
+    padding: 14px 18px;
+    cursor: pointer;
+    font-weight: 500;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    user-select: none;
+    transition: background 0.15s;
+  }
+  .faq-q:hover { background: var(--surface-2); }
+  .faq-q::after {
+    content: '+';
+    font-size: 20px;
+    color: var(--text-3);
+    transition: transform 0.2s;
+    font-weight: 300;
+  }
+  .faq-item.open .faq-q::after { transform: rotate(45deg); }
+  .faq-a {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease-out;
+    padding: 0 18px;
+    color: var(--text-2);
+  }
+  .faq-item.open .faq-a {
+    max-height: 400px;
+    padding: 0 18px 16px;
+  }
+  /* 提示框 */
+  .callout {
+    background: var(--primary-light);
+    border-left: 3px solid var(--primary);
+    padding: 12px 16px;
+    border-radius: 0 6px 6px 0;
+    margin: 16px 0;
+    font-size: 14px;
+  }
+  .callout strong { color: var(--primary); }
+  .callout.warn {
+    background: var(--amber-light);
+    border-left-color: var(--amber);
+  }
+  .callout.warn strong { color: var(--amber); }
+  /* 设计原则网格 */
+  .principles {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 14px;
+    margin: 20px 0;
+  }
+  .principle {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+  }
+  .principle-num {
+    font-size: 11px;
+    color: var(--text-3);
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .principle-title {
+    font-weight: 600;
+    margin-bottom: 6px;
+    color: var(--text);
+  }
+  .principle-desc {
+    font-size: 13px;
+    color: var(--text-2);
+    line-height: 1.5;
+  }
+  footer {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 40px;
+    border-top: 1px solid var(--border);
+    color: var(--text-3);
+    font-size: 13px;
+    display: flex;
+    justify-content: space-between;
+  }
+  /* 响应式 */
+  @media (max-width: 900px) {
+    .container {
+      grid-template-columns: 1fr;
+      gap: 30px;
+      padding: 24px;
+    }
+    nav.toc {
+      position: relative;
+      top: 0;
+      max-height: none;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      background: var(--surface);
+    }
+    .hero { padding: 50px 24px 40px; }
+    .hero h1 { font-size: 28px; }
+    section h2 { font-size: 20px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="progress-bar" id="progress"></div>
+
+<header class="hero">
+  <span class="hero-tag">EMBEDDED · AI · FUNCTION CALLING</span>
+  <h1>ai-core 模块</h1>
+  <p>给 GEC6818 + LVGL 嵌入式项目加上原生 Function Calling 能力的独立 C 模块。模型（Qwen2.5:7b）通过 Ollama API 输出标准 <code>tool_calls</code> JSON，C 代码解析后调用注册的硬件 handler，实现"自然语言 → 控制板载硬件"的完整闭环。</p>
+  <div class="hero-stats">
+    <div class="hero-stat">
+      <span class="hero-stat-num">9</span>
+      <span class="hero-stat-label">源文件</span>
+    </div>
+    <div class="hero-stat">
+      <span class="hero-stat-num">~800</span>
+      <span class="hero-stat-label">行 C 代码</span>
+    </div>
+    <div class="hero-stat">
+      <span class="hero-stat-num">3</span>
+      <span class="hero-stat-label">分层架构</span>
+    </div>
+    <div class="hero-stat">
+      <span class="hero-stat-num">0</span>
+      <span class="hero-stat-label">LVGL 依赖</span>
+    </div>
+  </div>
+</header>
+
+<div class="container">
+  <nav class="toc">
+    <h3>导航</h3>
+    <ul>
+      <li><a href="#intro" class="active">这是什么</a></li>
+      <li><a href="#problem">解决的问题</a></li>
+      <li><a href="#arch">架构设计</a></li>
+      <li><a href="#files">文件清单</a></li>
+      <li><a href="#quickstart">快速开始</a></li>
+      <li><a href="#mechanism">核心机制</a></li>
+      <li><a href="#api">API 文档</a></li>
+      <li><a href="#new-tool">新增硬件</a></li>
+      <li><a href="#lvgl">LVGL 集成</a></li>
+      <li><a href="#arm">交叉编译</a></li>
+      <li><a href="#faq">常见问题</a></li>
+      <li><a href="#principles">设计原则</a></li>
+    </ul>
+  </nav>
+
+  <main>
+
+    <section id="intro">
+      <h2>这是什么</h2>
+      <p>一个<strong>不依赖 LVGL</strong> 的 AI Agent C 模块，封装了：</p>
+      <ul style="margin-left: 20px; margin-bottom: 14px;">
+        <li>与 Ollama HTTP <code>/api/chat</code> 的通信</li>
+        <li>Qwen2.5:7b 原生 Function Calling（<code>tool_calls</code>）的解析与分发</li>
+        <li>工具注册表（数据驱动，新增硬件零成本）</li>
+        <li>事件回调机制（让 UI 层负责线程安全，自己不碰 LVGL）</li>
+      </ul>
+      <p>跑通后，你可以对开发板说<strong>"帮我点亮 2 号 LED"</strong>，模型会输出 <code>control_led({"led_id":2,"state":"on"})</code>，C 代码自动执行硬件控制并把结果回传，模型再生成自然语言回复。</p>
+      <div class="callout">
+        <strong>验证过的最小闭环：</strong> 用户输入 → 模型决定调工具 → 执行硬件控制 → 结果回传模型 → 生成自然语言回复。三个用例全部跑通。
+      </div>
+    </section>
+
+    <section id="problem">
+      <h2>解决的问题</h2>
+      <h3>原方案的痛点</h3>
+      <table>
+        <thead><tr><th>问题</th><th>影响</th></tr></thead>
+        <tbody>
+          <tr><td>UI、HTTP、JSON、硬件控制全耦合</td><td>改一处怕影响全部</td></tr>
+          <tr><td>用关键词匹配判断意图</td><td>模型说"把灯打开"识别不到</td></tr>
+          <tr><td><code>[ACTION]</code> 标签嵌入模型输出</td><td>模型经常格式不规范，解析失败</td></tr>
+          <tr><td>AI 逻辑直接调 <code>lv_async_call</code></td><td>无法在 PC 上脱离 LVGL 测试</td></tr>
+        </tbody>
+      </table>
+      <h3>新方案怎么解决</h3>
+      <table>
+        <thead><tr><th>痛点</th><th>新方案</th></tr></thead>
+        <tbody>
+          <tr><td>耦合</td><td>分三层：UI / Agent / Tools，独立编译</td></tr>
+          <tr><td>关键词匹配</td><td>用 Qwen2.5 原生 <code>tool_calls</code>，模型理解语义</td></tr>
+          <tr><td><code>[ACTION]</code> 标签</td><td>删除，改用标准 JSON Schema</td></tr>
+          <tr><td>不能 PC 测试</td><td>Agent + Tools 不依赖 LVGL，PC 上 <code>make</code> 直接跑</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="arch">
+      <h2>架构设计</h2>
+      <div class="arch-svg">
+        <svg viewBox="0 0 600 520" xmlns="http://www.w3.org/2000/svg" role="img">
+          <title>ai-core 三层架构图</title>
+          <desc>UI 层、AI Agent 层、工具层、硬件、Ollama Server 之间的解耦关系</desc>
+          <defs>
+            <marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M2 1L8 5L2 9" fill="none" stroke="#5C5A55" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </marker>
+          </defs>
+          <!-- 应用容器 -->
+          <rect x="20" y="40" width="560" height="320" rx="14" fill="#F4F2EE" stroke="#B4B2A9" stroke-width="0.6" stroke-dasharray="5 4"/>
+          <text x="36" y="62" font-family="inherit" font-size="11" fill="#8B8881">GEC6818 应用进程（可整体移植）</text>
+          <!-- UI 层 -->
+          <rect x="40" y="80" width="520" height="60" rx="8" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+          <text x="300" y="103" text-anchor="middle" font-size="13" font-weight="500" fill="#0C447C">UI 层（依赖 LVGL）</text>
+          <text x="300" y="123" text-anchor="middle" font-size="11" fill="#185FA5">ai_chat_page.c  ←→  ai_ui_adapter.c</text>
+          <!-- AI Agent 层 -->
+          <rect x="40" y="170" width="520" height="60" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/>
+          <text x="300" y="193" text-anchor="middle" font-size="13" font-weight="500" fill="#3C3489">AI Agent 层（独立模块 · 不依赖 LVGL）★</text>
+          <text x="300" y="213" text-anchor="middle" font-size="11" fill="#534AB7">ai_agent.c — HTTP / tool_calls 解析 / 事件回调</text>
+          <!-- 工具层 -->
+          <rect x="40" y="260" width="520" height="60" rx="8" fill="#FAEEDA" stroke="#854F0B" stroke-width="0.5"/>
+          <text x="300" y="283" text-anchor="middle" font-size="13" font-weight="500" fill="#633806">工具层（独立模块 · 硬件相关）★</text>
+          <text x="300" y="303" text-anchor="middle" font-size="11" fill="#854F0B">ai_tools.c — 工具注册表 / LED / 蜂鸣器 / 传感器</text>
+          <!-- 箭头 UI <-> Agent -->
+          <path d="M 295 140 L 295 165" stroke="#5C5A55" stroke-width="1.5" fill="none" marker-end="url(#ar)"/>
+          <path d="M 305 165 L 305 140" stroke="#5C5A55" stroke-width="1.5" fill="none" marker-end="url(#ar)"/>
+          <text x="318" y="158" font-size="10" fill="#8B8881">事件回调</text>
+          <!-- 箭头 Agent <-> Tools -->
+          <path d="M 295 230 L 295 255" stroke="#5C5A55" stroke-width="1.5" fill="none" marker-end="url(#ar)"/>
+          <path d="M 305 255 L 305 230" stroke="#5C5A55" stroke-width="1.5" fill="none" marker-end="url(#ar)"/>
+          <text x="318" y="248" font-size="10" fill="#8B8881">tool_calls</text>
+          <!-- 硬件 -->
+          <rect x="40" y="390" width="240" height="70" rx="8" fill="#FAECE7" stroke="#993C1D" stroke-width="0.5"/>
+          <text x="160" y="413" text-anchor="middle" font-size="13" font-weight="500" fill="#712B13">GEC6818 硬件</text>
+          <text x="160" y="431" text-anchor="middle" font-size="10" fill="#993C1D">/sys/class/leds  /dev/*</text>
+          <text x="160" y="447" text-anchor="middle" font-size="10" fill="#993C1D">GPIO / I2C / 串口</text>
+          <!-- Ollama -->
+          <rect x="320" y="390" width="240" height="70" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+          <text x="440" y="413" text-anchor="middle" font-size="13" font-weight="500" fill="#085041">Ollama Server (PC)</text>
+          <text x="440" y="431" text-anchor="middle" font-size="10" fill="#0F6E56">qwen2.5:7b</text>
+          <text x="440" y="447" text-anchor="middle" font-size="10" fill="#0F6E56">HTTP :11434/api/chat</text>
+          <!-- 箭头 工具 -> 硬件 -->
+          <path d="M 160 320 L 160 385" stroke="#5C5A55" stroke-width="1.5" fill="none" marker-end="url(#ar)"/>
+          <!-- 箭头 Agent <-> Ollama -->
+          <path d="M 440 230 L 440 385" stroke="#5C5A55" stroke-width="1.5" fill="none" marker-end="url(#ar)"/>
+          <path d="M 450 385 L 450 230" stroke="#5C5A55" stroke-width="1.5" fill="none" marker-end="url(#ar)"/>
+          <text x="460" y="310" font-size="10" fill="#8B8881">HTTP /api/chat</text>
+        </svg>
+      </div>
+      <p class="subtle"><strong>关键设计：</strong>★ 标记的两层不依赖 LVGL，可以单独 gcc 编译，PC 上跑测试，调通了再交叉编译塞到板子上。</p>
+    </section>
+
+    <section id="files">
+      <h2>文件清单</h2>
+      <div class="cards">
+        <div class="card">
+          <div class="card-title">ai_agent.h</div>
+          <div class="card-desc">Agent 对外接口：事件类型、回调、公开 API</div>
+          <span class="card-meta">~60 行 · 头文件</span>
+        </div>
+        <div class="card">
+          <div class="card-title">ai_agent.c</div>
+          <div class="card-desc">HTTP 通信 + tool_calls 解析循环 + 事件回调</div>
+          <span class="card-meta">~250 行 · 实现</span>
+        </div>
+        <div class="card">
+          <div class="card-title">ai_tools.h</div>
+          <div class="card-desc">工具注册表接口：handler 类型、注册项、dispatch</div>
+          <span class="card-meta">~40 行 · 头文件</span>
+        </div>
+        <div class="card">
+          <div class="card-title">ai_tools.c</div>
+          <div class="card-desc">工具注册表 + 硬件控制（PC mock / 板子真实双版本）</div>
+          <span class="card-meta">~170 行 · 实现</span>
+        </div>
+        <div class="card">
+          <div class="card-title">ai_ui_adapter.c</div>
+          <div class="card-desc">LVGL 适配层：事件 → lv_async_call → UI 函数</div>
+          <span class="card-meta">~110 行 · 适配</span>
+        </div>
+        <div class="card">
+          <div class="card-title">http_client.h/.c</div>
+          <div class="card-desc">POSIX socket HTTP/1.1 实现（WSL2/板子通用）</div>
+          <span class="card-meta">~165 行 · 通信</span>
+        </div>
+        <div class="card">
+          <div class="card-title">main_test.c</div>
+          <div class="card-desc">PC 测试入口：交互式终端 + printf 验证</div>
+          <span class="card-meta">~90 行 · 测试</span>
+        </div>
+        <div class="card">
+          <div class="card-title">Makefile</div>
+          <div class="card-desc">三种编译目标：pc_test / arm / get_cjson</div>
+          <span class="card-meta">~70 行 · 构建</span>
+        </div>
+        <div class="card">
+          <div class="card-title">cJSON.c/.h</div>
+          <div class="card-desc">单文件 JSON 库（make get_cjson 自动下载）</div>
+          <span class="card-meta">第三方 · MIT</span>
+        </div>
+      </div>
+    </section>
+
+    <section id="quickstart">
+      <h2>快速开始（PC 测试）</h2>
+      <div class="steps">
+        <div class="step">
+          <h4>准备依赖</h4>
+          <p>WSL2 Ubuntu 上 <code>sudo apt install build-essential</code>，进入 ai-core 目录执行 <code>make get_cjson</code> 下载 cJSON 单文件库。</p>
+        </div>
+        <div class="step">
+          <h4>启动 Ollama（关键）</h4>
+          <p>Windows PowerShell 设 <code>set OLLAMA_HOST=0.0.0.0</code> 后 <code>ollama serve</code>，必须监听 0.0.0.0 才能让 WSL2 访问。</p>
+        </div>
+        <div class="step">
+          <h4>获取 Windows IP</h4>
+          <p>WSL2 执行 <code>cat /etc/resolv.conf | grep nameserver</code>，拿到类似 <code>172.28.80.1</code> 的 IP，改到 <code>main_test.c</code> 顶部的 host 变量。</p>
+        </div>
+        <div class="step">
+          <h4>编译运行</h4>
+          <p>执行 <code>make</code> 编译 PC 测试版，再 <code>make run</code> 直接跑。</p>
+        </div>
+        <div class="step">
+          <h4>测试用例</h4>
+          <p>依次输入："你好" / "帮我点亮 1 号 LED" / "查看温度" / "蜂鸣器响 1 秒"，观察是否触发 <code>[工具调用]</code> 和 <code>[MOCK ...]</code> 输出。</p>
+        </div>
+      </div>
+      <div class="callout">
+        <strong>验证通过标志：</strong> 看到 <code>[工具调用] control_led({"led_id":1,"state":"on"})</code> + <code>[MOCK hw_led_set] LED 1 -> ON</code> + <code>[最终回答]</code> 三段都出现，说明 FC 闭环完全跑通。
+      </div>
+    </section>
+
+    <section id="mechanism">
+      <h2>核心机制</h2>
+
+      <h3>1. Function Calling 闭环（最重要）</h3>
+      <div class="arch-svg">
+        <svg viewBox="0 0 600 460" xmlns="http://www.w3.org/2000/svg" role="img">
+          <title>Function Calling 数据流</title>
+          <defs>
+            <marker id="ar2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M2 1L8 5L2 9" fill="none" stroke="#5C5A55" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </marker>
+          </defs>
+          <!-- 起点 -->
+          <rect x="200" y="20" width="200" height="50" rx="8" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+          <text x="300" y="42" text-anchor="middle" font-size="13" font-weight="500" fill="#0C447C">用户输入</text>
+          <text x="300" y="60" text-anchor="middle" font-size="11" fill="#185FA5">ai_agent_send()</text>
+          <!-- POST -->
+          <rect x="200" y="100" width="200" height="50" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/>
+          <text x="300" y="122" text-anchor="middle" font-size="13" font-weight="500" fill="#3C3489">POST /api/chat</text>
+          <text x="300" y="140" text-anchor="middle" font-size="10" fill="#534AB7">带 tools schema</text>
+          <!-- 模型 -->
+          <rect x="200" y="180" width="200" height="50" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/>
+          <text x="300" y="202" text-anchor="middle" font-size="13" font-weight="500" fill="#3C3489">模型返回 response</text>
+          <text x="300" y="220" text-anchor="middle" font-size="10" fill="#534AB7">解析 tool_calls?</text>
+          <!-- 判断 -->
+          <path d="M 300 230 L 300 250" stroke="#5C5A55" stroke-width="1.5" fill="none" marker-end="url(#ar2)"/>
+          <!-- 有 tool_calls 分支 -->
+          <rect x="40" y="280" width="220" height="60" rx="8" fill="#FAEEDA" stroke="#854F0B" stroke-width="0.5"/>
+          <text x="150" y="302" text-anchor="middle" font-size="12" font-weight="500" fill="#633806">有 tool_calls</text>
+          <text x="150" y="318" text-anchor="middle" font-size="10" fill="#854F0B">执行 hardware handler</text>
+          <text x="150" y="332" text-anchor="middle" font-size="10" fill="#854F0B">结果作为 role=tool 回传</text>
+          <!-- 无 tool_calls 分支 -->
+          <rect x="340" y="280" width="220" height="60" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+          <text x="450" y="302" text-anchor="middle" font-size="12" font-weight="500" fill="#085041">无 tool_calls</text>
+          <text x="450" y="318" text-anchor="middle" font-size="10" fill="#0F6E56">content 即最终回复</text>
+          <text x="450" y="332" text-anchor="middle" font-size="10" fill="#0F6E56">触发 AI_EVT_ANSWER</text>
+          <!-- 分支箭头 -->
+          <path d="M 280 250 Q 150 250 150 280" stroke="#5C5A55" stroke-width="1.5" fill="none" marker-end="url(#ar2)"/>
+          <path d="M 320 250 Q 450 250 450 280" stroke="#5C5A55" stroke-width="1.5" fill="none" marker-end="url(#ar2)"/>
+          <!-- 循环箭头 -->
+          <path d="M 40 310 Q 0 310 0 125 Q 0 100 200 125" stroke="#5C5A55" stroke-width="1.2" fill="none" stroke-dasharray="4 3" marker-end="url(#ar2)"/>
+          <text x="14" y="220" font-size="10" fill="#8B8881" transform="rotate(-90 14 220)">循环最多 3 次</text>
+          <!-- 最终回答 -->
+          <rect x="340" y="380" width="220" height="50" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+          <text x="450" y="402" text-anchor="middle" font-size="13" font-weight="500" fill="#085041">最终回答</text>
+          <text x="450" y="420" text-anchor="middle" font-size="10" fill="#0F6E56">模型生成自然语言</text>
+          <path d="M 450 340 L 450 380" stroke="#5C5A55" stroke-width="1.5" fill="none" marker-end="url(#ar2)"/>
+        </svg>
+      </div>
+      <p class="subtle">代码位置：<code>ai_agent.c</code> 的 <code>worker_thread()</code> 函数。</p>
+
+      <h3>2. 工具注册表（数据驱动）</h3>
+      <p>新增一个硬件工具<strong>只需要两步</strong>：写 handler 函数，在 <code>g_tools[]</code> 加一行。模型通过自动生成的 <code>tools</code> JSON Schema 知道有哪些工具可用。</p>
+
+      <h3>3. 事件回调（解耦 LVGL）</h3>
+      <p>Agent 不直接调用任何 LVGL 函数，而是发事件：</p>
+      <table>
+        <thead><tr><th>事件类型</th><th>触发时机</th><th>字段</th></tr></thead>
+        <tbody>
+          <tr><td><code>AI_EVT_THINKING</code></td><td>模型输出思考块</td><td><code>text</code></td></tr>
+          <tr><td><code>AI_EVT_ACTION</code></td><td>工具被调用</td><td><code>tool</code>, <code>args</code>, <code>result</code></td></tr>
+          <tr><td><code>AI_EVT_ANSWER</code></td><td>模型最终回复</td><td><code>text</code></td></tr>
+          <tr><td><code>AI_EVT_ERROR</code></td><td>出错</td><td><code>text</code></td></tr>
+          <tr><td><code>AI_EVT_DONE</code></td><td>一次请求完全结束</td><td>（无）</td></tr>
+        </tbody>
+      </table>
+
+      <h3>4. PC / 板子双版本硬件控制</h3>
+      <p><code>ai_tools.c</code> 用 <code>#ifdef __PC_TEST__</code> 切换：PC 测试 <code>make</code> 默认带这个宏走 printf mock；板子部署 <code>make arm</code> 不带这个宏，走真实硬件分支。</p>
+    </section>
+
+    <section id="api">
+      <h2>API 文档</h2>
+
+      <h3>ai_agent.h</h3>
+      <pre><code><span class="c">// 初始化 Agent</span>
+<span class="k">void</span> <span class="f">ai_agent_init</span>(<span class="k">const</span> <span class="k">char</span> *host, <span class="k">int</span> port, <span class="k">const</span> <span class="k">char</span> *model);
+
+<span class="c">// 注册事件回调 (worker 线程触发, UI 层负责线程安全)</span>
+<span class="k">void</span> <span class="f">ai_agent_set_callback</span>(ai_event_cb_t cb, <span class="k">void</span> *user_data);
+
+<span class="c">// 设置系统提示词</span>
+<span class="k">void</span> <span class="f">ai_agent_set_system</span>(<span class="k">const</span> <span class="k">char</span> *system_prompt);
+
+<span class="c">// 异步发送用户消息 (内部起线程, 立即返回)</span>
+<span class="k">bool</span> <span class="f">ai_agent_send</span>(<span class="k">const</span> <span class="k">char</span> *user_msg);
+
+<span class="c">// 中断当前请求</span>
+<span class="k">void</span> <span class="f">ai_agent_stop</span>(<span class="k">void</span>);
+
+<span class="c">// 清空对话历史</span>
+<span class="k">void</span> <span class="f">ai_agent_clear_history</span>(<span class="k">void</span>);
+
+<span class="c">// 查询是否正在处理</span>
+<span class="k">bool</span> <span class="f">ai_agent_is_running</span>(<span class="k">void</span>);</code></pre>
+
+      <h3>ai_tools.h</h3>
+      <pre><code><span class="c">// 工具 handler 函数签名: 接收 args, 返回 malloc'd 结果字符串</span>
+<span class="k">typedef</span> <span class="k">char</span>* (*<span class="t">ai_tool_handler_t</span>)(<span class="k">const</span> cJSON *args);
+
+<span class="c">// 获取工具注册表</span>
+<span class="k">const</span> ai_tool_t* <span class="f">ai_tools_get_all</span>(<span class="k">int</span> *count);
+
+<span class="c">// 生成 Ollama tools 字段 JSON (malloc'd)</span>
+<span class="k">char</span>* <span class="f">ai_tools_build_schema_json</span>(<span class="k">void</span>);
+
+<span class="c">// 按 name 派发到对应 handler</span>
+<span class="k">char</span>* <span class="f">ai_tools_dispatch</span>(<span class="k">const</span> <span class="k">char</span> *name, <span class="k">const</span> cJSON *args);</code></pre>
+    </section>
+
+    <section id="new-tool">
+      <h2>如何新增一个硬件工具</h2>
+      <p>以"控制风扇"为例，只需两步：</p>
+
+      <h3>步骤 1：实现 handler</h3>
+      <pre><code><span class="c">// ai_tools.c 里加这个函数</span>
+<span class="k">static</span> <span class="k">char</span>* <span class="f">tool_control_fan</span>(<span class="k">const</span> cJSON *args) {
+    <span class="k">int</span> speed = <span class="f">cJSON_GetObjectItem</span>(args, <span class="s">"speed"</span>)->valueint;
+
+<span class="c">#ifdef __PC_TEST__</span>
+    <span class="f">printf</span>(<span class="s">"  [MOCK hw_fan_set] speed=%d%%\n"</span>, speed);
+<span class="c">#else</span>
+    <span class="c">/* TODO: 接 GEC6818 PWM */</span>
+<span class="c">#endif</span>
+
+    <span class="k">char</span> buf[<span class="n">64</span>];
+    <span class="f">snprintf</span>(buf, <span class="k">sizeof</span>(buf), <span class="s">"{\"ok\":true,\"speed\":%d}"</span>, speed);
+    <span class="k">return</span> <span class="f">strdup</span>(buf);
+}</code></pre>
+
+      <h3>步骤 2：注册到 g_tools[]</h3>
+      <pre><code><span class="k">static</span> <span class="k">const</span> ai_tool_t g_tools[] = {
+    <span class="c">/* ... 已有的工具 ... */</span>
+    {
+        <span class="s">"control_fan"</span>,                          <span class="c">// name (模型可见)</span>
+        <span class="s">"控制风扇转速"</span>,                       <span class="c">// description</span>
+        <span class="s">"{\"type\":\"object\",\"properties\":{"</span>     <span class="c">// JSON Schema</span>
+        <span class="s">"\"speed\":{\"type\":\"integer\",</span>
+        <span class="s">"\"description\":\"转速百分比 0-100\"}"</span>
+        <span class="s">"},\"required\":[\"speed\"]}"</span>,
+        tool_control_fan                          <span class="c">// handler</span>
+    },
+};</code></pre>
+
+      <div class="callout">
+        <strong>重新编译 <code>make clean && make</code></strong> 模型立即就能用 <code>control_fan</code> 了，<strong>不需要改 agent 一行代码</strong>。
+      </div>
+    </section>
+
+    <section id="lvgl">
+      <h2>LVGL 集成指南</h2>
+
+      <h3>1. 工程链接</h3>
+      <pre><code><span class="c"># 你的 LVGL 工程 Makefile</span>
+CFLAGS  += -I./ai-core
+LDFLAGS += -L./ai-core -lai_core -lpthread
+SRCS    += ai-core/cJSON.c   <span class="c"># 把 cJSON.c 加到源文件列表</span></code></pre>
+
+      <h3>2. 初始化</h3>
+      <pre><code><span class="k">void</span> <span class="f">app_main</span>(<span class="k">void</span>) {
+    <span class="f">lv_init</span>();
+    lv_obj_t *screen = <span class="f">ai_chat_page_create</span>();
+
+    <span class="f">ai_agent_init</span>(<span class="s">"192.168.137.1"</span>, <span class="n">11434</span>, <span class="s">"qwen2.5:7b"</span>);
+    <span class="f">ai_agent_set_callback</span>(<span class="f">ai_ui_adapter_get_cb</span>(), NULL);
+    <span class="f">ai_agent_set_system</span>(<span class="s">"你是智慧水产养殖AI助手。"</span>);
+    <span class="f">ai_ui_adapter_init</span>(screen);
+}</code></pre>
+
+      <h3>3. 发送按钮回调</h3>
+      <pre><code><span class="k">static</span> <span class="k">void</span> <span class="f">send_btn_cb</span>(lv_event_t *e) {
+    lv_obj_t *ta = <span class="f">lv_event_get_user_data</span>(e);
+    <span class="k">const</span> <span class="k">char</span> *text = <span class="f">lv_textarea_get_text</span>(ta);
+    <span class="k">if</span> (!text || !text[<span class="n">0</span>]) <span class="k">return</span>;
+
+    <span class="f">ai_chat_page_begin_response</span>(g_screen);    <span class="c">// UI 显示 loading</span>
+    <span class="f">ai_agent_send</span>(text);                       <span class="c">// 异步发送</span>
+    <span class="f">lv_textarea_set_text</span>(ta, <span class="s">""</span>);              <span class="c">// 清空输入框</span>
+}</code></pre>
+
+      <div class="callout">
+        <strong>关键：</strong> <code>ai_ui_adapter.c</code> 已经把 5 种事件桥接到 <code>lv_async_call</code>，自动调用你已有的 <code>ai_chat_page_append_thinking()</code> / <code>ai_chat_page_append_answer()</code> 等 UI 函数。<strong>原有的 UI 函数完全不用改</strong>。
+      </div>
+    </section>
+
+    <section id="arm">
+      <h2>交叉编译到 GEC6818</h2>
+      <div class="steps">
+        <div class="step">
+          <h4>生成 ARM 静态库</h4>
+          <p>在 ai-core 目录执行 <code>make arm</code>，生成 <code>ai_core.a</code> 静态库文件。</p>
+        </div>
+        <div class="step">
+          <h4>链接到 LVGL 工程</h4>
+          <p>在 LVGL 工程的 Makefile 加 <code>-L./ai-core -lai_core -lpthread</code>，并把 <code>ai-core/cJSON.c</code> 加到源文件列表。</p>
+        </div>
+        <div class="step">
+          <h4>把真实硬件代码写实</h4>
+          <p>把 <code>ai_tools.c</code> 里 <code>#else</code> 分支的 TODO 替换成实际硬件操作（写 sysfs 或 mmap 寄存器）。</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="faq">
+      <h2>常见问题排查</h2>
+
+      <div class="faq-item">
+        <div class="faq-q">connect failed: Connection refused</div>
+        <div class="faq-a">
+          <strong>原因：</strong>Windows Ollama 没监听 <code>0.0.0.0</code>，只监听 <code>127.0.0.1</code>。<br>
+          <strong>解决：</strong><code>set OLLAMA_HOST=0.0.0.0</code> 后再 <code>ollama serve</code>。
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-q">JSON parse failed</div>
+        <div class="faq-a">
+          <strong>原因：</strong>模型返回的不是合法 JSON。<br>
+          <strong>排查：</strong>在 <code>ai_agent.c</code> 的 <code>worker_thread</code> 里加 <code>printf</code> 打印 <code>resp</code>，看模型实际返回了什么。常见是上下文超长被截断。
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-q">没出现 [工具调用]，只有 [最终回答]</div>
+        <div class="faq-a">
+          <strong>原因：</strong><code>tools</code> 字段没传成功，或模型没识别为工具调用。<br>
+          <strong>排查：</strong>在 <code>build_body()</code> 里打印 <code>tools_json</code>，确认 schema 没问题。也可以用 curl 手动测一次。
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-q">模型偶尔回英文</div>
+        <div class="faq-a">
+          <strong>解决：</strong>在 system prompt 加 <code>"始终用简体中文回复。"</code>。
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-q">cJSON.h: No such file or directory</div>
+        <div class="faq-a">
+          <strong>解决：</strong>执行 <code>make get_cjson</code> 重新下载单文件库。
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-q">一次输入触发多次 [工具调用]</div>
+        <div class="faq-a">
+          <strong>正常：</strong>这是 FC 的多轮调用。模型可能先调 <code>read_temperature</code> 拿数据，再调 <code>control_led</code> 根据温度调灯光。Agent 内部最多循环 3 次（<code>TOOL_LOOP_MAX</code>），防止死循环。
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-q">思考块（&lt;think&gt;）干扰输出</div>
+        <div class="faq-a">
+          <strong>已处理：</strong><code>ai_agent.c</code> 的 <code>emit_thinking_if_any()</code> 会自动拆分，思考内容走 <code>AI_EVT_THINKING</code> 事件，最终回复走 <code>AI_EVT_ANSWER</code>。
+        </div>
+      </div>
+    </section>
+
+    <section id="principles">
+      <h2>设计原则与边界</h2>
+
+      <h3>设计原则</h3>
+      <div class="principles">
+        <div class="principle">
+          <div class="principle-num">01</div>
+          <div class="principle-title">解耦</div>
+          <div class="principle-desc">AI Agent 和 Tools 不依赖 LVGL，可独立编译测试</div>
+        </div>
+        <div class="principle">
+          <div class="principle-num">02</div>
+          <div class="principle-title">数据驱动</div>
+          <div class="principle-desc">新增硬件只改注册表，不改 agent 逻辑</div>
+        </div>
+        <div class="principle">
+          <div class="principle-num">03</div>
+          <div class="principle-title">事件驱动</div>
+          <div class="principle-desc">UI 通过回调接收事件，agent 不主动碰 UI</div>
+        </div>
+        <div class="principle">
+          <div class="principle-num">04</div>
+          <div class="principle-title">双版本</div>
+          <div class="principle-desc">PC mock 和板子真实硬件用条件编译切换</div>
+        </div>
+        <div class="principle">
+          <div class="principle-num">05</div>
+          <div class="principle-title">闭环</div>
+          <div class="principle-desc">tool_calls 结果回传模型，模型基于真实数据生成回复</div>
+        </div>
+      </div>
+
+      <h3>不做的事（边界）</h3>
+      <table>
+        <thead><tr><th>不实现</th><th>原因</th></tr></thead>
+        <tbody>
+          <tr><td>流式响应（stream:true）</td><td>用 stream:false 简化解析</td></tr>
+          <tr><td>HTTP chunked transfer-encoding</td><td>Ollama 在 stream:false 下不用</td></tr>
+          <tr><td>第三方 JSON 库依赖</td><td>用 cJSON 单文件库即可</td></tr>
+          <tr><td>多模态（图片/音频）</td><td>只做文本 + tool_calls</td></tr>
+          <tr><td>RAG / 向量检索</td><td>工具结果就是模型的"记忆"</td></tr>
+        </tbody>
+      </table>
+
+      <h3>性能参考（GEC6818, 1GB RAM）</h3>
+      <table>
+        <thead><tr><th>指标</th><th>数值</th></tr></thead>
+        <tbody>
+          <tr><td>单次请求耗时</td><td>2-8 秒（取决于模型负载和 prompt 长度）</td></tr>
+          <tr><td>内存占用</td><td>~5MB（agent + cJSON + HTTP buffer）</td></tr>
+          <tr><td>工具调用循环上限</td><td>3 次（<code>TOOL_LOOP_MAX</code>）</td></tr>
+          <tr><td>对话历史上限</td><td>100 轮（环形缓冲）</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+  </main>
+</div>
+
+<footer>
+  <span>ai-core · GEC6818 + Qwen2.5:7b Function Calling 模块</span>
+  <span>粤嵌园区实训 · 2026-07-06</span>
+</footer>
+
+<script>
+  // 顶部进度条
+  window.addEventListener('scroll', () => {
+    const h = document.documentElement;
+    const scrolled = (h.scrollTop / (h.scrollHeight - h.clientHeight)) * 100;
+    document.getElementById('progress').style.width = scrolled + '%';
+  });
+
+  // 章节高亮 (IntersectionObserver)
+  const sections = document.querySelectorAll('section[id]');
+  const navLinks = document.querySelectorAll('nav.toc a');
+  const observer = new IntersectionObserver(entries => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const id = entry.target.id;
+        navLinks.forEach(a => {
+          a.classList.toggle('active', a.getAttribute('href') === '#' + id);
+        });
+      }
+    });
+  }, { rootMargin: '-20% 0px -70% 0px' });
+  sections.forEach(s => observer.observe(s));
+
+  // FAQ 折叠
+  document.querySelectorAll('.faq-q').forEach(q => {
+    q.addEventListener('click', () => {
+      q.parentElement.classList.toggle('open');
+    });
+  });
+</script>
+
+</body>
+</html>

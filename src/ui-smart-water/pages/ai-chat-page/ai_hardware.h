@@ -1,11 +1,11 @@
 // ========== ai_hardware.h ==========
-// AI 硬件控制模块 — 为 DeepSeek-R1 大模型提供"动手能力"
+// AI 硬件控制模块 — GEC6818 板卡底层硬件动作 (板卡实测验证)
 //
-//   设计原理（方案 B — 提示词工程 + 标签解析）：
-//     1. System Prompt 注入工具清单 → 模型输出 <action>命令</action> 标签
-//     2. ai_split_actions() 扫描回复中的 <action> 标签
-//     3. ai_execute_action() 通过 Linux sysfs 操作 GPIO / LED / I2C
-//     4. 执行结果回注对话历史 → 下一轮 AI 可以引用传感器数据
+//   现在由 Qwen2.5:7b 原生 Function Calling 驱动:
+//     1. 模型输出 tool_calls JSON → ai_agent.c 解析
+//     2. ai_tools.c 的 tool handler 把参数翻译成 action_name
+//     3. ai_execute_action() 通过 Linux sysfs / input 子系统操作硬件
+//     4. 执行结果 (JSON) 回传模型 → 模型基于真实数据生成自然语言回复
 //
 //   平台支持：
 //     - GEC6818 ARM Linux：真实 GPIO + LED 子系统 + I2C (MMA8653)
@@ -66,28 +66,10 @@ extern "C" {
  ***********************************************************************/
 
 /**
- * 执行单个硬件动作。
+ * 执行单个硬件动作 (由 ai_tools.c 的 tool handler 调用)。
  * 返回 malloc 的中文结果字符串（调用方负责 free）。
  */
 char* ai_execute_action(const char *action_name);
-
-/**
- * 扫描文本中的 <action>...</action> 标签，执行硬件动作。
- * 输入字符串在原地被修改（移除所有 <action> 标签），
- * 返回执行结果的汇总字符串。
- */
-/**
- * 扫描文本中的 [ACTION] 行，执行硬件动作并移除该行。
- * 返回执行结果的汇总字符串（malloc，调用方释放）。
- * 无动作时返回 NULL。
- */
-char* ai_split_actions(char *text);
-
-/**
- * 仅移除文本中的 [ACTION] 行，不执行硬件动作。
- * 用于清理对话历史中的命令标记，避免重复执行。
- */
-void ai_strip_actions(char *text);
 
 #ifdef __cplusplus
 }

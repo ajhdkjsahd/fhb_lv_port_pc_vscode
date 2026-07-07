@@ -2,6 +2,7 @@
 // 纯数学实现: Pearson 相关 + 最小二乘线性回归。零依赖。
 #include "edge_analysis.h"
 #include <math.h>
+#include <stddef.h>
 
 /* Pearson 相关系数 r = cov(a,b) / (σa · σb)
  *  对齐数组 a[], b[] 同下标 (由引擎保证: 同一帧采样 6 路同步入环)。 */

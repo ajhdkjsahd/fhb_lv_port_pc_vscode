@@ -936,273 +936,78 @@ void app_action_network_send(const char * message)
 
 /***********************************************************************
  *  ╔══════════════════════════════════════════════════════════════╗
- *  ║  分区 4：AI 对话 — Ollama / DeepSeek-R1                      ║
- *  ║  页面：ai_chat_page.c                                        ║
+ *  ║  分区 4：AI 对话 — Qwen2.5:7b 原生 Function Calling          ║
+ *  ║  页面：ai_chat_page.c (UI 不变)                              ║
  *  ╚══════════════════════════════════════════════════════════════╝
- *  HTTP POST → /api/chat (non-streaming) → parse JSON → split
- *  <think> into thinking panel → display answer in bubble.
- *  Pure POSIX sockets via http_client.h. Pthread recv → lv_async_call.
+ *  重逻辑下沉到 ai_agent.c (HTTP + tool_calls 闭环) + ai_tools.c
+ *  (工具注册表 → ai_hardware 真硬件 + edge_engine 真传感器)。
+ *  本分区只做薄壳: init/send/stop 转调 agent, 外加一个事件→UI
+ *  适配回调 (单次 lv_async_call 包, 保证 thinking/action/answer 顺序)。
  ***********************************************************************/
 #include "ai-chat-page/ai_chat_page.h"
-#include "ai-chat-page/http_client.h"
-#include "ai-chat-page/ai_hardware.h"
-#include <pthread.h>
+#include "ai-chat-page/ai_agent.h"
 
-/* ── AI： Ollama 服务器配置 ── */
-#ifdef __linux__
-#define OLLAMA_HOST       "192.168.137.1"
-#else
-#define OLLAMA_HOST       "localhost"
-#endif
-#define OLLAMA_PORT       11434
-#define OLLAMA_MODEL      "qwen2.5:7b"
-#define OLLAMA_TMO        300  /* 5 min — DeepSeek-R1 model loading can be slow */
-#define OLLAMA_SYSTEM_MSG \
-    "你是智慧水产养殖AI助手，精通水质管理、鱼病诊断、投喂策略、养殖技术。" \
-    "硬件操作(开灯/蜂鸣器/传感器)由系统自动执行，" \
-    "用户消息中「(系统已执行: ...)」表示操作已完成，" \
-    "你只需根据结果自然回复，无需重复操作。"
+/* ── AI： 系统提示词 (模型人设 + 能力说明 + 水产知识; 工具 schema 由 agent 自动注入) ── */
+#define AI_SYSTEM_PROMPT \
+    "你是智慧水产养殖AI助手，运行在 GEC6818 ARM Linux 嵌入式板卡上。" \
+    "你具备四大核心能力:" \
+    " 1. 自动解读水质环境状态并给出评价 — 用 read_water_quality 一次性获取全部 6 路传感器" \
+    "    (温度/湿度/光照/溶解氧/pH值/氨氮), 对照参考区间判断水质是否健康。" \
+    " 2. 智能解答水产养殖和设备运维问题 — 结合养殖知识与板载硬件状态回答用户。" \
+    " 3. 结合运行日志定位故障 — 用 analyze_environment 查看趋势/预测/相关性/异常剔除数," \
+    "    若某路传感器 reject_count 异常偏高或趋势突变, 提示可能传感器故障或设备异常。" \
+    " 4. 智能推荐投喂量/增氧时长等最优方案 — 用 analyze_environment 获取 1h 预测 + 趋势," \
+    "    结合 DO/pH/水温预测值推荐增氧时长; 参考水温+溶氧推荐投喂量。" \
+    "" \
+    "★ 关键行为准则 (必须遵守):" \
+    "  A. 任何时候用户询问水质相关话题 (溶氧/pH/氨氮/水温/能否养殖/是不是生病/投喂/增氧)," \
+    "     必须第一时间调用 read_water_quality 获取全部 6 路实时传感器数据;" \
+    "     永远不要凭空猜测当前水质, 必须基于工具返回的真实数据再给出分析和建议。" \
+    "  B. 当用户提出养殖方案建议 (投喂量/增氧时长/换水策略), 先用 read_water_quality" \
+    "     获取当前值, 再用 analyze_environment 获取趋势和预测, 然后综合给出方案。" \
+    "  C. 每次用户要求操作硬件 (LED/蜂鸣器) 都必须调用对应工具;" \
+    "     即使看起来是重复操作也要执行, 不要假设设备已经处于某种状态。" \
+    "  D. 先调用工具获得数据 → 再分析和回复。绝对不要跳过工具调用直接编造数据。" \
+    "" \
+    "水质参考区间 (温水鱼 e.g. 罗非鱼/草鱼/鲤鱼):" \
+    "  水温 22~30°C 理想, <20°C 摄食减少, >32°C 需增氧" \
+    "  溶解氧 >5 mg/L 优良, 3~5 偏低需增氧, <3 危险立即开增氧机" \
+    "  pH 6.5~8.5 安全, 7.0~8.0 理想" \
+    "  氨氮 <0.5 mg/L 安全, 0.5~1.0 偏高需换水, >1.0 有毒立即处理" \
+    "  光照 40~80% 日间正常" \
+    "" \
+    "投喂建议参考 (日投喂率=饲料重/鱼体重):" \
+    "  水温 22~25°C: 2~3% 体重/日, 分 2~3 次" \
+    "  水温 25~30°C: 3~4% 体重/日, 分 3~4 次" \
+    "  水温 <20°C: 1~2%, 减少投喂" \
+    "  溶氧 <3 mg/L 或 pH 异常: 暂停投喂, 先增氧/换水" \
+    "" \
+    "增氧时长建议:" \
+    "  溶氧 >5: 正常无需额外增氧" \
+    "  溶氧 4~5: 开增氧机 2~4 小时" \
+    "  溶氧 3~4: 开增氧机 4~6 小时, 监测回升" \
+    "  溶氧 <3: 立即全开增氧机 + 减少投喂, 直到回升到 >5" \
+    "" \
+    "板载硬件 (通过工具控制, 用于演示/调试):" \
+    "  LED D7~D10 (led1~4): control_led 开关, random_led_on 随机点亮" \
+    "  蜂鸣器 (GPIO78): control_buzzer / toggle_buzzer" \
+    "  K2 按键 (GPIO28): read_button, 按下=0" \
+    "  MMA8653 加速度计: read_acceleration 检测板子姿态/振动" \
+    "" \
+    "回复要求: 始终用简体中文。先分析数据, 再给出结论和建议。数据异常时优先判断" \
+    "是传感器故障还是真实环境变化(连续多点和趋势能区分)。回复简洁但覆盖关键点。"
 
-/* ── AI： 状态变量 ── */
-static lv_obj_t * g_ai_screen  = NULL;
-static int        g_ai_sock    = -1;   /* socket to close on stop */
-static pthread_t  g_ai_thread;
-static bool       g_ai_running = false;
-static bool       g_ai_stop    = false;
+/* ── AI： 屏幕指针 ── */
+static lv_obj_t * g_ai_screen = NULL;
 
-/* ── AI： 对话历史（环形缓冲区，最多 100 轮） ── */
-#define AI_HIST_MAX 100
-static char * g_ai_hist[AI_HIST_MAX];
-static int    g_ai_hist_n    = 0;
-static int    g_ai_hist_head = 0;
-
-/* ── AI： JSON 辅助函数（零依赖，来自 gec6818_ollama_client） ── */
-
-static char* ai_json_val(const char *s, const char *key)
-{
-    char pat[256];
-    int pl = snprintf(pat, sizeof(pat), "\"%s\":\"", key);
-    if (pl < 1 || pl >= (int)sizeof(pat)) return NULL;
-    const char *p = strstr(s, pat);
-    if (!p) return NULL;
-    p += pl;
-    const char *end = p;
-    while (*end && *end != '"') { if (*end == '\\' && end[1]) end++; end++; }
-    if (!*end) return NULL;
-    size_t len = (size_t)(end - p);
-    char *out = malloc(len + 1);
-    if (!out) return NULL;
-    char *d = out;
-    while (p < end) {
-        if (*p == '\\' && p + 1 < end) {
-            p++;
-            switch (*p) {
-                case 'n':  *d++ = '\n'; p++; continue;
-                case 't':  *d++ = '\t'; p++; continue;
-                case 'r':  *d++ = '\r'; p++; continue;
-                case '"':  *d++ = '"';  p++; continue;
-                case '\\': *d++ = '\\'; p++; continue;
-                case 'u': {
-                    /* 解码 \uXXXX（Ollama 会将 < > HTML 转义为 < >） */
-                    p++;  /* skip 'u' */
-                    if (p + 4 <= end) {
-                        char hex[5];
-                        memcpy(hex, p, 4); hex[4] = '\0';
-                        unsigned int cp = (unsigned int)strtoul(hex, NULL, 16);
-                        if (cp < 0x80) {
-                            *d++ = (char)cp;
-                        } else if (cp < 0x800) {
-                            *d++ = (char)(0xC0 | (cp >> 6));
-                            *d++ = (char)(0x80 | (cp & 0x3F));
-                        } else {
-                            *d++ = (char)(0xE0 | (cp >> 12));
-                            *d++ = (char)(0x80 | ((cp >> 6) & 0x3F));
-                            *d++ = (char)(0x80 | (cp & 0x3F));
-                        }
-                    }
-                    p += 4;
-                    continue;
-                }
-            }
-        }
-        *d++ = *p++;
-    }
-    *d = '\0';
-    return out;
-}
-
-static char* ai_json_esc(const char *src)
-{
-    if (!src) return strdup("");
-    size_t cap = strlen(src) + 128;
-    char *buf = malloc(cap), *d = buf;
-    if (!buf) return NULL;
-    while (*src) {
-        if ((size_t)(d - buf) + 3 > cap) {
-            size_t off = (size_t)(d - buf);
-            cap *= 2;
-            char *t = realloc(buf, cap);
-            if (!t) { free(buf); return NULL; }
-            buf = t; d = buf + off;
-        }
-        switch (*src) {
-            case '"':  *d++ = '\\'; *d++ = '"';  break;
-            case '\\': *d++ = '\\'; *d++ = '\\'; break;
-            case '\n': *d++ = '\\'; *d++ = 'n';  break;
-            case '\r': *d++ = '\\'; *d++ = 'r';  break;
-            case '\t': *d++ = '\\'; *d++ = 't';  break;
-            default:   *d++ = *src; break;
-        }
-        src++;
-    }
-    *d = '\0';
-    return buf;
-}
-
-/* 拆分 <think>...</think> 块，返回 malloc 的思考文本（或 NULL）。
- * 返回的字符串由调用方释放；输入字符串在原地修改以移除 think 块。 */
-static char* ai_split_think(char *text)
-{
-    if (!text) return NULL;
-
-    LV_LOG_USER("AI: split_think start, first 60 chars: %.60s", text);
-
-    size_t tcap = 256, tlen = 0;
-    char *think = malloc(tcap);
-    if (!think) return NULL;
-    think[0] = '\0';
-
-    char *src = text;
-    char *dst = text;
-    bool hit_break = false;  /* true → memmove 已处理 NUL */
-
-    while (*src) {
-        /* Use strstr to find next <think> anywhere in remaining text */
-        char *tag = strstr(src, "<think>");
-        if (!tag) {
-            /* No more think blocks — copy rest and finish */
-            size_t rest = strlen(src);
-            if (dst != src) memmove(dst, src, rest + 1);
-            LV_LOG_USER("AI: split_think no more tags, remaining=%zu", rest);
-            hit_break = true;
-            break;
-        }
-
-        LV_LOG_USER("AI: split_think found <think> at offset %d", (int)(tag - text));
-
-        /* Copy text before <think> */
-        if (tag > dst) {
-            size_t prefix = (size_t)(tag - src);
-            if (dst != src) memmove(dst, src, prefix);
-            dst += prefix;
-        }
-        src = tag + 7;  /* skip <think> */
-
-        /* Find closing </think> */
-        char *close_tag = strstr(src, "</think>");
-        if (close_tag) {
-            size_t chunk = (size_t)(close_tag - src);
-            LV_LOG_USER("AI: split_think found </think>, chunk=%zu", chunk);
-
-            /* Expand think buffer if needed */
-            if (tlen + chunk + 2 > tcap) {
-                tcap = tlen + chunk + 256;
-                char *tmp = realloc(think, tcap);
-                if (!tmp) { free(think); return NULL; }
-                think = tmp;
-            }
-
-            if (tlen > 0) think[tlen++] = '\n';
-            memcpy(think + tlen, src, chunk);
-            tlen += chunk;
-            think[tlen] = '\0';
-
-            src = close_tag + 8;  /* skip </think> */
-        } else {
-            LV_LOG_USER("AI: split_think no closing </think> found");
-            src += strlen(src);
-        }
-    }
-
-    if (!hit_break && dst != text)
-        *dst = '\0';
-
-    LV_LOG_USER("AI: split_think done, think=%zu chars, answer=%zu chars",
-                tlen, strlen(text));
-
-    if (tlen == 0) { free(think); return NULL; }
-    return think;
-}
-
-/* ── AI： 对话历史管理 ── */
-
-static void ai_hist_add(const char *role, const char *msg)
-{
-    char *safe = ai_json_esc(msg);
-    if (!safe) return;
-    char frag[8192];
-    snprintf(frag, sizeof(frag), "{\"role\":\"%s\",\"content\":\"%s\"}", role, safe);
-    free(safe);
-
-    if (g_ai_hist_n >= AI_HIST_MAX) {
-        free(g_ai_hist[g_ai_hist_head]);
-        g_ai_hist_head = (g_ai_hist_head + 1) % AI_HIST_MAX;
-        g_ai_hist_n--;
-    }
-    g_ai_hist[(g_ai_hist_head + g_ai_hist_n) % AI_HIST_MAX] = strdup(frag);
-    g_ai_hist_n++;
-}
-
-static void ai_hist_clear(void)
-{
-    for (int i = 0; i < AI_HIST_MAX; i++) {
-        free(g_ai_hist[i]); g_ai_hist[i] = NULL;
-    }
-    g_ai_hist_n = g_ai_hist_head = 0;
-}
-
-/* ── AI： 从对话历史构建 JSON 请求体 ── */
-
-static char* ai_build_body(const char *user_msg)
-{
-    /* Add user message to history for body building */
-    ai_hist_add("user", user_msg);
-
-    size_t cap = 32768;
-    char *body = malloc(cap);
-    if (!body) return NULL;
-
-    /* Escaped system prompt and user message */
-    char *esc_sys = ai_json_esc(OLLAMA_SYSTEM_MSG);
-    int pos = snprintf(body, cap,
-        "{\"model\":\"%s\",\"messages\":["
-        "{\"role\":\"system\",\"content\":\"%s\"}",
-        OLLAMA_MODEL, esc_sys ? esc_sys : "");
-    free(esc_sys);
-
-    if (g_ai_hist_n > 0) {
-        pos += snprintf(body + pos, cap - (size_t)pos, ",");
-    }
-
-    for (int i = 0; i < g_ai_hist_n; i++) {
-        pos += snprintf(body + pos, cap - (size_t)pos,
-            "%s%s", g_ai_hist[(g_ai_hist_head + i) % AI_HIST_MAX],
-            i < g_ai_hist_n - 1 ? "," : "");
-    }
-    pos += snprintf(body + pos, cap - (size_t)pos, "],\"stream\":false}");
-
-    LV_LOG_USER("AI: body %d bytes", pos);
-    return body;
-}
-
-/* ── AI： UI 更新回调（单次 lv_async_call 保证顺序！） ── */
-
+/* ── AI： UI 数据包 (一次请求的 thinking/action/answer/error 打包) ── */
 typedef struct {
-    char *thinking;   /* malloc'd, NULL if none */
-    char *answer;     /* malloc'd, NULL if none */
-    char *error;      /* malloc'd, NULL if none */
+    char *thinking;   /* malloc'd, 累计思考 + 工具调用行, 可为 NULL */
+    char *answer;     /* malloc'd, 可为 NULL */
+    char *error;      /* malloc'd, 可为 NULL */
 } ai_ui_packet_t;
 
+/* 在主线程执行 (由 lv_async_call 调度) — 单次调用保证顺序 */
 static void ai_ui_show(void * data)
 {
     ai_ui_packet_t *p = (ai_ui_packet_t *)data;
@@ -1210,18 +1015,18 @@ static void ai_ui_show(void * data)
                 (void*)g_ai_screen, (void*)p->error,
                 (void*)p->thinking, (void*)p->answer);
 
-    if (g_ai_screen == NULL) goto cleanup;
+    if(g_ai_screen == NULL) goto cleanup;
 
-    if (p->error) {
+    if(p->error) {
         ai_chat_page_show_error(g_ai_screen, p->error);
     } else {
-        /* All steps in guaranteed order within ONE callback */
+        /* 全部步骤在一次回调内完成 — 顺序绝对安全 */
         ai_chat_page_begin_response(g_ai_screen);
-        if (p->thinking && p->thinking[0]) {
+        if(p->thinking && p->thinking[0]) {
             ai_chat_page_append_thinking(g_ai_screen, p->thinking);
         }
         ai_chat_page_finish_thinking(g_ai_screen);
-        if (p->answer && p->answer[0]) {
+        if(p->answer && p->answer[0]) {
             ai_chat_page_append_answer(g_ai_screen, p->answer);
         }
         ai_chat_page_finish_response(g_ai_screen);
@@ -1234,288 +1039,73 @@ cleanup:
     lv_free(p);
 }
 
-/* ── AI： 分配 UI 数据包（思考 + 回答 + 错误） ── */
-static ai_ui_packet_t * ai_pkt_new(const char *thinking, const char *answer,
-                                    const char *error)
+/* ── AI： 字符串追加 (换行分隔, LVGL 堆) ── */
+static char * str_append_line(char *dst, const char *src)
 {
-    ai_ui_packet_t *p = lv_malloc_zeroed(sizeof(*p));
-    if (!p) return NULL;
-    if (thinking) p->thinking = strdup(thinking);
-    if (answer)   p->answer   = strdup(answer);
-    if (error)    p->error    = strdup(error);
-    return p;
+    if(!src || !src[0]) return dst;
+    size_t dl = dst ? strlen(dst) : 0;
+    size_t sl = strlen(src);
+    char *t = lv_malloc(dl + sl + 2);   /* +1 换行 +1 NUL */
+    if(!t) return dst;
+    if(dl) { memcpy(t, dst, dl); t[dl++] = '\n'; }
+    memcpy(t + dl, src, sl);
+    t[dl + sl] = '\0';
+    lv_free(dst);
+    return t;
 }
 
-/* ── AI： 接收线程 — HTTP POST → 解析 JSON → 拆分 <think> → lv_async_call ── */
-static void * ai_recv_thread(void * arg)
+/* ── AI： 适配回调 (worker 线程触发, 累计事件, DONE 时一次性投递) ──
+ *  per-request 包: agent 保证同一时刻只有一个 worker, 故可用静态指针 */
+static ai_ui_packet_t * g_pkt = NULL;
+
+static void on_event(const ai_event_t * evt, void * user_data)
 {
-    const char *user_msg = (const char *)arg;
-
-    LV_LOG_USER("AI: thread start, msg='%s'", user_msg);
-
-    /* ── 意图预检测：常见硬件请求由 C 代码直接执行，AI 只管回复 ── */
-    const char *aug_msg = user_msg;
-    char *pre_result = NULL;
-    if (strstr(user_msg, "随机") && (strstr(user_msg, "LED") || strstr(user_msg, "灯")))
-        pre_result = ai_execute_action("led_random_on");
-    else if (strstr(user_msg, "切换蜂鸣器") || strstr(user_msg, "蜂鸣器开关"))
-        pre_result = ai_execute_action("buzzer_toggle");
-    else if (strstr(user_msg, "加速度") || strstr(user_msg, "偏转角") || strstr(user_msg, "姿态"))
-        pre_result = ai_execute_action("read_accel");
-    else if (strstr(user_msg, "按键") || strstr(user_msg, "按钮"))
-        pre_result = ai_execute_action("read_button");
-    /* 更多意图可以在此扩展 */
-
-    if (pre_result && pre_result[0] && strncmp(pre_result, "[错误]", 7) != 0) {
-        LV_LOG_USER("AI: pre-execute intent, result=%s", pre_result);
-        /* 把执行结果追加到用户消息中，AI 会在上下文中看到 */
-        size_t nlen = strlen(user_msg) + strlen(pre_result) + 64;
-        char *tmp = malloc(nlen);
-        if (tmp) {
-            snprintf(tmp, nlen, "%s\n(系统已执行: %s)", user_msg, pre_result);
-            aug_msg = tmp;
-        }
-    }
-    free(pre_result);
-
-    /* Build JSON body */
-    char *body = ai_build_body(aug_msg);
-    if (aug_msg != user_msg) free((void*)aug_msg);
-    if (!body) {
-        LV_LOG_USER("AI: body build failed");
-        ai_ui_packet_t *p = ai_pkt_new(NULL, NULL, "构建请求失败");
-        lv_async_call(ai_ui_show, p);
-        g_ai_running = false;
-        free((void*)user_msg);
-        return NULL;
+    (void)user_data;
+    if(!g_pkt) {
+        g_pkt = lv_malloc_zeroed(sizeof(*g_pkt));
+        if(!g_pkt) return;
     }
 
-#ifdef __linux__
-    LV_LOG_USER("AI: POST to %s:%d", OLLAMA_HOST, OLLAMA_PORT);
-
-    HttpResponse *r = http_post(OLLAMA_HOST, OLLAMA_PORT, "/api/chat", body, OLLAMA_TMO);
-    free(body);
-
-    if (g_ai_stop) {
-        LV_LOG_USER("AI: stopped by user");
-        ai_ui_packet_t *p = ai_pkt_new(NULL, NULL, "已停止生成");
-        lv_async_call(ai_ui_show, p);
-        g_ai_running = false;
-        g_ai_stop = false;
-        free((void*)user_msg);
-        if (r) http_response_free(r);
-        return NULL;
+    switch(evt->type) {
+    case AI_EVT_THINKING:
+        g_pkt->thinking = str_append_line(g_pkt->thinking, evt->text);
+        break;
+    case AI_EVT_ACTION: {
+        /* 工具调用作为一行塞进思考面板, 用户能看到 "执行了什么" */
+        char line[320];
+        snprintf(line, sizeof(line), "[执行 %s] %s",
+                 evt->tool ? evt->tool : "?",
+                 evt->result ? evt->result : "(无结果)");
+        g_pkt->thinking = str_append_line(g_pkt->thinking, line);
+        break;
     }
-
-    ai_ui_packet_t *pkt = lv_malloc_zeroed(sizeof(*pkt));
-    if (!pkt) {
-        http_response_free(r);
-        g_ai_running = false;
-        free((void*)user_msg);
-        return NULL;
+    case AI_EVT_ANSWER:
+        lv_free(g_pkt->answer);
+        g_pkt->answer = evt->text ? strdup(evt->text) : NULL;
+        break;
+    case AI_EVT_ERROR:
+        lv_free(g_pkt->error);
+        g_pkt->error = evt->text ? strdup(evt->text) : strdup("未知错误");
+        break;
+    case AI_EVT_DONE:
+        /* 单次 lv_async_call 投递整个包 — 保证 UI 更新顺序 */
+        lv_async_call(ai_ui_show, g_pkt);
+        g_pkt = NULL;
+        break;
     }
-
-    if (!r) {
-        LV_LOG_USER("AI: http_post returned NULL");
-        pkt->error = strdup("网络请求失败");
-        lv_async_call(ai_ui_show, pkt);
-        g_ai_running = false;
-        g_ai_stop = false;
-        free((void*)user_msg);
-        return NULL;
-    }
-
-    if (r->status_code < 0) {
-        LV_LOG_USER("AI: network error: %s", r->errmsg);
-        char err[300];
-        snprintf(err, sizeof(err), "网络错误: %s", r->errmsg);
-        pkt->error = strdup(err);
-        lv_async_call(ai_ui_show, pkt);
-        http_response_free(r);
-        g_ai_running = false;
-        g_ai_stop = false;
-        free((void*)user_msg);
-        return NULL;
-    }
-
-    if (r->status_code != 200) {
-        LV_LOG_USER("AI: HTTP %d, body=%.200s", r->status_code,
-                    r->body ? r->body : "(null)");
-        char err[512];
-        const char *body_hint = "";
-        if (r->body) {
-            char *err_msg = ai_json_val(r->body, "error");
-            body_hint = err_msg ? err_msg : "";
-        }
-        snprintf(err, sizeof(err), "服务器错误 HTTP %d%s%s",
-                 r->status_code,
-                 body_hint[0] ? ": " : "",
-                 body_hint[0] ? body_hint : "");
-        pkt->error = strdup(err);
-        if (body_hint[0]) free((void*)body_hint);
-        lv_async_call(ai_ui_show, pkt);
-        http_response_free(r);
-        g_ai_running = false;
-        g_ai_stop = false;
-        free((void*)user_msg);
-        return NULL;
-    }
-
-    LV_LOG_USER("AI: response %zu bytes", r->body_len);
-
-    /* Extract answer from JSON */
-    char *content = ai_json_val(r->body, "content");
-    if (content) {
-        LV_LOG_USER("AI: content len=%zu", strlen(content));
-        LV_LOG_USER("AI: content text=%.120s", content);
-
-        /* 十六进制 dump 前 60 字节（排查隐藏字符/BOM/格式问题） */
-        char hex[256];
-        int hlen = 0;
-        for (int i = 0; i < 60 && content[i]; i++) {
-            hlen += snprintf(hex + hlen, sizeof(hex) - hlen,
-                             "%02X ", (unsigned char)content[i]);
-        }
-        LV_LOG_USER("AI: content hex(60)=%s", hex);
-
-        /* 检查是否包含 <action> / <think> 标签 */
-        LV_LOG_USER("AI: has_action=%d  has_think=%d",
-                    strstr(content, "[ACTION]") != NULL,
-                    strstr(content, "<think>")  != NULL);
-    } else {
-        LV_LOG_USER("AI: content is NULL!");
-    }
-
-    if (content && content[0]) {
-        /* ── 1. 先拆分 think（让 answer 和 think 分离） ── */
-        LV_LOG_USER("AI: step1 split_think, before: len=%zu", strlen(content));
-        char *thinking = ai_split_think(content);
-        LV_LOG_USER("AI: after split_think, content len=%zu, think=%s",
-                    strlen(content),
-                    thinking ? (thinking[0] ? "yes" : "empty") : "none");
-
-        /* ── 2. 在 answer 中搜 [ACTION] ── */
-        LV_LOG_USER("AI: step2 split_actions in answer");
-        char *act_ans = ai_split_actions(content);
-        LV_LOG_USER("AI: answer actions: %s", act_ans ? act_ans : "(none)");
-
-        /* ── 3. 在 think 中只移除 [ACTION] 行，不执行（AI 在引用语法） ── */
-        if (thinking && thinking[0]) {
-            LV_LOG_USER("AI: step3 strip_actions in think");
-            ai_strip_actions(thinking);
-            LV_LOG_USER("AI: think after strip: len=%zu", strlen(thinking));
-        }
-
-        /* ── 4. 动作结果即 answer 中执行的结果 ── */
-        char *action_results = act_ans;  /* 只有 answer 中执行的才是有效结果 */
-
-        /* ── 5. 如果 think 内容被移空则释放 ── */
-        if (thinking && !thinking[0]) {
-            free(thinking);
-            thinking = NULL;
-        }
-        if (thinking) {
-            pkt->thinking = thinking;  /* transfer ownership */
-        }
-
-        /* ── 6. 去掉前导空白 ── */
-        char *trimmed = content;
-        while (*trimmed == '\n' || *trimmed == '\r'
-               || *trimmed == ' '  || *trimmed == '\t')
-            trimmed++;
-        if (trimmed != content) {
-            memmove(content, trimmed, strlen(trimmed) + 1);
-            LV_LOG_USER("AI: trimmed %d leading whitespace chars",
-                        (int)(trimmed - content));
-        }
-
-        /* ── 7. 剩余内容即为回答 ── */
-        if (content[0]) {
-            LV_LOG_USER("AI: answer len=%zu, text=%.80s",
-                        strlen(content), content);
-            pkt->answer = content;
-        } else if (action_results && action_results[0]) {
-            /* answer 为空但有动作结果 → 用动作结果当回答 */
-            LV_LOG_USER("AI: answer empty, using action result as answer");
-            pkt->answer = strdup(action_results);
-            free(content);
-        } else if (pkt->thinking && pkt->thinking[0]) {
-            /* 从 think 里截取（最多 400 字）当答案 */
-            size_t tlen = strlen(pkt->thinking);
-            size_t show = tlen > 400 ? 400 : tlen;
-            LV_LOG_USER("AI: answer empty, fallback from think (%zu chars)",
-                        show);
-            pkt->answer = malloc(show + 1);
-            if (pkt->answer) {
-                memcpy(pkt->answer, pkt->thinking, show);
-                pkt->answer[show] = '\0';
-            }
-            free(content);
-        } else {
-            LV_LOG_USER("AI: no answer and no think!");
-            pkt->error = strdup("模型未生成有效回答");
-            free(content);
-        }
-
-        /* ── 8. 传感器结果注入历史（LED/蜂鸣器用户可见，不注入）── */
-        if (action_results && action_results[0]) {
-            if (strstr(action_results, "[水温]")        ||
-                strstr(action_results, "[pH]")          ||
-                strstr(action_results, "[加速度")       ||
-                strstr(action_results, "[按键]")        ||
-                strstr(action_results, "[溶解氧]")) {
-                ai_hist_add("user", action_results);
-                LV_LOG_USER("AI: sensor result injected into history");
-            } else {
-                LV_LOG_USER("AI: LED/buzzer result, skip history injection");
-            }
-        }
-        free(action_results);
-    } else {
-        if (content) free(content);
-        LV_LOG_USER("AI: no content in response");
-        pkt->error = strdup("模型返回为空");
-    }
-
-    /* Add assistant reply to history (strip [ACTION] & <think>, no exec) */
-    char *raw_content = ai_json_val(r->body, "content");
-    if (raw_content) {
-        ai_strip_actions(raw_content);  /* 只移除 [ACTION] 行，不执行 */
-        char *think = ai_split_think(raw_content);  /* strip <think> */
-        free(think);
-        ai_hist_add("assistant", raw_content);
-        free(raw_content);
-    }
-
-    http_response_free(r);
-
-    /* SINGLE lv_async_call — guarantees order! */
-    lv_async_call(ai_ui_show, pkt);
-
-#else  /* PC / Windows stub */
-    LV_LOG_USER("AI: PC stub simulated response");
-    free(body);
-    {
-        ai_ui_packet_t *p = ai_pkt_new(
-            "分析用户问题…\n检索知识库：水产养殖手册 v2.3\n匹配合适的回答模板…\n置信度：0.94",
-            "这是模拟的AI回复。在Linux/ARM板卡上运行时会连接到真实的Ollama服务器。\n\n请确保：\n1. Ollama 服务已启动 (ollama serve)\n2. 已拉取模型 (ollama pull deepseek-r1:7b)\n3. 网络可达 " OLLAMA_HOST ":",
-            NULL);
-        lv_async_call(ai_ui_show, p);
-    }
-#endif
-
-    g_ai_running = false;
-    g_ai_stop = false;
-    free((void*)user_msg);
-    LV_LOG_USER("AI: thread done");
-    return NULL;
 }
 
-/* ── AI： 公开 API（由 ai_chat_page.c 和 ui.c 调用） ── */
+/* ── AI： 公开 API (由 ai_chat_page.c 和 ui.c 调用) ── */
 
 void app_action_ai_init(void)
 {
-    LV_LOG_USER("AI: Ollama client ready (host=%s, model=%s)", OLLAMA_HOST, OLLAMA_MODEL);
+    /* host/port/model 传 NULL/0 → 沿用 ai_agent.c 编译期默认
+     *   板子 (__linux__): 192.168.137.1:11434
+     *   PC            : localhost:11434 (仅模拟分支, 不真连) */
+    ai_agent_init(NULL, 0, NULL);
+    ai_agent_set_system(AI_SYSTEM_PROMPT);
+    ai_agent_set_callback(on_event, NULL);
+    LV_LOG_USER("AI: Ollama FC client ready (qwen2.5:7b)");
 }
 
 void app_action_ai_set_screen(lv_obj_t * screen)
@@ -1525,40 +1115,15 @@ void app_action_ai_set_screen(lv_obj_t * screen)
 
 void app_action_ai_send(const char * message)
 {
-    if (g_ai_running) {
+    if(message == NULL || message[0] == '\0') return;
+    if(!ai_agent_send(message)) {
         LV_LOG_USER("AI: already running, ignoring send");
-        return;
     }
-    if (message == NULL || message[0] == '\0') return;
-
-    LV_LOG_USER("AI: send '%s'", message);
-
-    g_ai_running = true;
-    g_ai_stop    = false;
-
-    char *msg_copy = strdup(message);
-    if (!msg_copy) {
-        g_ai_running = false;
-        ai_ui_packet_t *p1 = ai_pkt_new(NULL, NULL, "内存不足");
-        lv_async_call(ai_ui_show, p1);
-        return;
-    }
-
-    if (pthread_create(&g_ai_thread, NULL, ai_recv_thread, msg_copy) != 0) {
-        free(msg_copy);
-        g_ai_running = false;
-        ai_ui_packet_t *p2 = ai_pkt_new(NULL, NULL, "线程创建失败");
-        lv_async_call(ai_ui_show, p2);
-        return;
-    }
-    pthread_detach(g_ai_thread);
 }
 
 void app_action_ai_stop(void)
 {
-    if (!g_ai_running) return;
-    LV_LOG_USER("AI: stop requested");
-    g_ai_stop = true;
+    ai_agent_stop();
 }
 
 /***********************************************************************
