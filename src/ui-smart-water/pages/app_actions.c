@@ -557,6 +557,7 @@ static void mplayer_died(void)
 
 static void mplayer_stop(void)
 {
+    if(g_mplayer_pid == 0) return;  /* mplayer 没启动, 无需停止 (防止从其他页面回首页时"串台") */
     LV_LOG_USER("mplayer_stop: force-killing mplayer");
     mplayer_force_kill();
     video_page_set_play_state(g_video_screen, false);
