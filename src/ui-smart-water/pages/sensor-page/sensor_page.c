@@ -4,6 +4,7 @@
 #include "sensor_page.h"
 #include "../app_fonts.h"
 #include "../app_actions.h"
+#include "../app_mqtt.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -452,6 +453,13 @@ static void timer_cb(lv_timer_t * timer)
 {
     sensor_page_ctx_t * ctx = lv_timer_get_user_data(timer);
     if(ctx) update_sensors(ctx);
+
+    /* MQTT 断线重连: 每 10 秒检查一次 (1s 定时器计数) */
+    static int tick = 0;
+    if(++tick >= 10) {
+        tick = 0;
+        app_mqtt_ensure_connected();
+    }
 }
 
 static void live_dot_glow_cb(void * var, int32_t v)

@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=800, height=480, initial-scale=1.0">
+<title>养殖环境趋势报表 — Trend Page Preview</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    width: 800px; height: 480px;
+    background: #060E14;
+    font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
+    display: flex; flex-direction: column;
+    padding: 10px 12px; gap: 8px;
+    color: #E6F2EE;
+  }
+
+  /* ---- TOP BAR ---- */
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    height: 40px; flex-shrink: 0;
+  }
+  .back-btn {
+    display: flex; align-items: center; gap: 6px;
+    background: #0A1620; border: 1px solid #1C2E36;
+    color: #00D4AA; font-size: 15px; padding: 6px 14px;
+    border-radius: 10px; cursor: pointer; white-space: nowrap;
+  }
+  .back-btn:hover { background: #13242E; border-color: #00D4AA; }
+  .title {
+    font-size: 20px; font-weight: 600; color: #E6F2EE;
+    letter-spacing: 2px;
+  }
+  .dropdown {
+    display: flex; align-items: center; gap: 6px;
+    background: #0A1620; border: 1px solid #1C2E36;
+    color: #00D4AA; font-size: 14px; padding: 6px 14px;
+    border-radius: 10px; cursor: pointer;
+  }
+  .dd-arrow { font-size: 10px; opacity: 0.6; }
+
+  /* ---- MIDDLE ROW ---- */
+  .mid-row {
+    display: flex; gap: 10px; flex: 1; min-height: 0;
+  }
+
+  /* ---- CHART CARD ---- */
+  .chart-card {
+    flex: 1; background: #0A1620; border: 1px solid #1C2E36;
+    border-radius: 14px; padding: 12px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .chart-area {
+    flex: 1; position: relative; min-height: 0;
+  }
+  .chart-svg { width: 100%; height: 100%; }
+  .chart-grid { stroke: #1C2E36; stroke-width: 0.5; }
+  .chart-line { fill: none; stroke: #00D4AA; stroke-width: 2.2; }
+  .chart-fill { fill: #00D4AA; fill-opacity: 0.10; }
+  .chart-range {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 12px; color: #9AB8B0; padding: 0 4px;
+  }
+  .chart-range .cur { color: #00D4AA; font-weight: 700; font-size: 16px; }
+  .chart-range .label { color: #5A7A72; }
+
+  /* ---- ANALYSIS PANEL ---- */
+  .analysis-panel {
+    width: 260px; flex-shrink: 0;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .predict-card, .corr-card {
+    background: #0A1620; border: 1px solid #1C2E36;
+    border-radius: 12px; padding: 12px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .card-label {
+    font-size: 11px; color: #5A7A72;
+    letter-spacing: 1.5px;
+  }
+  .predict-value {
+    font-size: 19px; color: #00D4AA; font-weight: 700;
+  }
+  .predict-meta { font-size: 11px; color: #5A7A72; line-height: 16px; }
+  .corr-item {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 12px; color: #9AB8B0; padding: 3px 0;
+    border-bottom: 1px solid #1C2E36;
+  }
+  .corr-item:last-child { border-bottom: none; }
+  .corr-pair { color: #E6F2EE; }
+  .corr-r { color: #0288D1; font-weight: 600; }
+
+  /* ---- BOTTOM ROW ---- */
+  .bottom-row {
+    display: flex; gap: 10px; flex-shrink: 0; height: 144px;
+  }
+
+  /* ---- DAILY TABLE (LEFT) ---- */
+  .daily-card {
+    flex: 1; background: #0A1620; border: 1px solid #1C2E36;
+    border-radius: 12px; padding: 10px 14px;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .daily-header { font-size: 11px; color: #5A7A72; letter-spacing: 1.5px; }
+  .daily-body {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: repeat(3, 1fr);
+    column-gap: 20px; row-gap: 4px;
+    flex: 1;
+    font-size: 12px; line-height: 20px;
+  }
+  .daily-row {
+    display: flex; align-items: center; gap: 8px;
+  }
+  .daily-name { color: #9AB8B0; min-width: 36px; }
+  .daily-range { color: #E6F2EE; min-width: 80px; }
+  .daily-mean { color: #00D4AA; font-weight: 600; min-width: 46px; }
+  .daily-rej { color: #FF6B6B; font-size: 11px; }
+
+  /* ---- FLAG LEGEND (RIGHT) ---- */
+  .legend-card {
+    width: 210px; flex-shrink: 0;
+    background: #0A1620; border: 1px solid #1C2E36;
+    border-radius: 12px; padding: 12px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .legend-title { font-size: 11px; color: #5A7A72; letter-spacing: 1.5px; }
+  .legend-item {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 11px; padding: 1px 0; line-height: 18px;
+  }
+  .legend-dot {
+    width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  }
+  .dot-ok   { background: #00D4AA; box-shadow: 0 0 6px #00D4AA; }
+  .dot-warn { background: #FFB800; box-shadow: 0 0 6px #FFB800; }
+  .dot-err  { background: #FF6B6B; box-shadow: 0 0 6px #FF6B6B; }
+  .dot-gray { background: #5A7A72; }
+  .legend-text { color: #9AB8B0; }
+  .legend-num  { color: #E6F2EE; font-weight: 600; min-width: 10px; }
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div class="topbar">
+  <div class="back-btn">◀ 返回</div>
+  <div class="title">养殖环境趋势报表</div>
+  <div class="dropdown">温度 <span class="dd-arrow">▼</span></div>
+</div>
+
+<!-- MIDDLE ROW: Chart (left) + Analysis (right) -->
+<div class="mid-row">
+
+  <div class="chart-card">
+    <div class="chart-area">
+      <svg class="chart-svg" viewBox="0 0 500 170" preserveAspectRatio="none">
+        <line x1="0" y1="42" x2="500" y2="42" class="chart-grid"/>
+        <line x1="0" y1="85" x2="500" y2="85" class="chart-grid"/>
+        <line x1="0" y1="127" x2="500" y2="127" class="chart-grid"/>
+        <path class="chart-fill"
+          d="M0,125 L18,108 L36,93 L54,80 L72,86 L90,74 L108,58 L126,62 L144,70 L162,60 L180,67 L198,52 L216,44 L234,56 L252,50 L270,40 L288,53 L306,46 L324,39 L342,51 L360,43 L378,36 L396,31 L414,39 L432,33 L450,29 L468,26 L486,21 L500,13 L500,170 L0,170 Z"/>
+        <path class="chart-line"
+          d="M0,125 L18,108 L36,93 L54,80 L72,86 L90,74 L108,58 L126,62 L144,70 L162,60 L180,67 L198,52 L216,44 L234,56 L252,50 L270,40 L288,53 L306,46 L324,39 L342,51 L360,43 L378,36 L396,31 L414,39 L432,33 L450,29 L468,26 L486,21 L500,13"/>
+      </svg>
+    </div>
+    <div class="chart-range">
+      <span><span class="label">最小</span> 24.1°C</span>
+      <span class="cur">当前 25.8°C</span>
+      <span><span class="label">最大</span> 27.3°C</span>
+    </div>
+  </div>
+
+  <div class="analysis-panel">
+    <div class="predict-card" style="flex:1">
+      <div class="card-label">线性回归 · 1h 预测</div>
+      <div class="predict-value">25.8 → 26.1°C ↑</div>
+      <div class="predict-meta">
+        趋势上升 · 斜率 +0.005°C/min<br>
+        样本 600 点 (最近 30min)
+      </div>
+    </div>
+    <div class="corr-card" style="flex:1.1">
+      <div class="card-label">变量相关性  |r| ≥ 0.5</div>
+      <div class="corr-item"><span class="corr-pair">温度 ↔ 溶解氧</span><span class="corr-r">r = -0.72</span></div>
+      <div class="corr-item"><span class="corr-pair">温度 ↔ pH值</span><span class="corr-r">r = +0.61</span></div>
+      <div class="corr-item"><span class="corr-pair">溶解氧 ↔ pH值</span><span class="corr-r">r = -0.53</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- BOTTOM: Daily (left) + Legend (right) -->
+<div class="bottom-row">
+
+  <div class="daily-card">
+    <div class="daily-header">当日报表</div>
+    <div class="daily-body">
+      <!-- 温度 -->
+      <div class="daily-row"><span class="daily-name">温度</span><span class="daily-range">24.1 ~ 27.3°C</span><span class="daily-mean">均 25.6</span><span class="daily-rej">剔除 0</span></div>
+      <!-- 湿度 -->
+      <div class="daily-row"><span class="daily-name">湿度</span><span class="daily-range">58.2 ~ 82.1%</span><span class="daily-mean">均 70.3</span><span class="daily-rej">剔除 2</span></div>
+      <!-- 光照 -->
+      <div class="daily-row"><span class="daily-name">光照</span><span class="daily-range">12 ~ 95%</span><span class="daily-mean">均 52</span><span class="daily-rej">剔除 0</span></div>
+      <!-- 溶解氧 -->
+      <div class="daily-row"><span class="daily-name">溶解氧</span><span class="daily-range">4.8 ~ 8.9 mg/L</span><span class="daily-mean">均 6.7</span><span class="daily-rej">剔除 1</span></div>
+      <!-- pH -->
+      <div class="daily-row"><span class="daily-name">pH值</span><span class="daily-range">6.80 ~ 7.80</span><span class="daily-mean">均 7.30</span><span class="daily-rej">剔除 0</span></div>
+      <!-- 氨氮 -->
+      <div class="daily-row"><span class="daily-name">氨氮</span><span class="daily-range">0.05 ~ 0.78 mg/L</span><span class="daily-mean">均 0.21</span><span class="daily-rej">剔除 3</span></div>
+    </div>
+  </div>
+
+  <div class="legend-card">
+    <div class="legend-title">剔除标记说明</div>
+    <div class="legend-item">
+      <div class="legend-dot dot-ok"></div>
+      <span class="legend-num">0</span><span class="legend-text">正常 · 通过全部检查</span>
+    </div>
+    <div class="legend-item">
+      <div class="legend-dot dot-warn"></div>
+      <span class="legend-num">1</span><span class="legend-text">超量程 · 超出物理范围</span>
+    </div>
+    <div class="legend-item">
+      <div class="legend-dot dot-err"></div>
+      <span class="legend-num">2</span><span class="legend-text">突变 · 速率异常跳变</span>
+    </div>
+    <div class="legend-item">
+      <div class="legend-dot dot-gray"></div>
+      <span class="legend-num">3</span><span class="legend-text">重复 · MQTT重投/卡死</span>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

@@ -7,9 +7,11 @@
 
 #include "app_mqtt.h"
 #include "app_actions.h"
+#include "../edge/edge_engine.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <MQTTClient.h>
 #include "cJSON.h"
 
@@ -70,9 +72,14 @@ void app_mqtt_deinit(void)
 
 void app_mqtt_ensure_connected(void)
 {
-    /* 库内部线程可能已经掉了，尝试静默重连 */
     if(g_connected) return;
-    mqtt_do_connect();
+    static int attempt = 0;
+    attempt++;
+    printf("[MQTT] [%d] 断线重连中...\n", attempt);
+    if(mqtt_do_connect()) {
+        printf("[MQTT] [%d] 重连成功!\n", attempt);
+        attempt = 0;
+    }
 }
 
 /**********************
@@ -91,7 +98,7 @@ static bool mqtt_do_connect(void)
     rc = MQTTClient_create(&g_client, MQTT_BROKER_ADDR, MQTT_CLIENT_ID,
                             MQTTCLIENT_PERSISTENCE_NONE, NULL);
     if(rc != MQTTCLIENT_SUCCESS) {
-        printf("[MQTT] create failed, rc=%d\n", rc);
+        printf("[MQTT] 创建客户端失败, rc=%d\n", rc);
         g_client = NULL;
         return false;
     }
@@ -100,22 +107,23 @@ static bool mqtt_do_connect(void)
     rc = MQTTClient_setCallbacks(g_client, NULL,
                                   mqtt_conn_lost, mqtt_msg_arrived, NULL);
     if(rc != MQTTCLIENT_SUCCESS) {
-        printf("[MQTT] setCallbacks failed, rc=%d\n", rc);
+        printf("[MQTT] 设置回调失败, rc=%d\n", rc);
         MQTTClient_destroy(&g_client);
         g_client = NULL;
         return false;
     }
 
-    /* 3. 连接 broker */
+    /* 3. 连接 broker (keepAliveInterval=60 → 60s 无心跳则服务端断开,
+     *     Paho 内部线程检测到断开后回调 mqtt_conn_lost) */
     MQTTClient_connectOptions opts = MQTTClient_connectOptions_initializer;
     opts.keepAliveInterval = 60;
     opts.cleansession      = 1;
     opts.connectTimeout    = 10;
 
-    printf("[MQTT] connecting %s ...\n", MQTT_BROKER_ADDR);
+    printf("[MQTT] 连接 %s (topic: %s) ...\n", MQTT_BROKER_ADDR, MQTT_TOPIC);
     rc = MQTTClient_connect(g_client, &opts);
     if(rc != MQTTCLIENT_SUCCESS) {
-        printf("[MQTT] connect failed, rc=%d\n", rc);
+        printf("[MQTT] 连接失败, rc=%d (0=SUCCESS, 1=FAILURE, 2=DISCONNECTED, 3=MAX_INFLIGHT)\n", rc);
         MQTTClient_destroy(&g_client);
         g_client = NULL;
         return false;
@@ -124,7 +132,7 @@ static bool mqtt_do_connect(void)
     /* 4. 订阅主题 */
     rc = MQTTClient_subscribe(g_client, MQTT_TOPIC, MQTT_QOS);
     if(rc != MQTTCLIENT_SUCCESS) {
-        printf("[MQTT] subscribe failed, rc=%d\n", rc);
+        printf("[MQTT] 订阅失败, rc=%d\n", rc);
         MQTTClient_disconnect(g_client, MQTT_TIMEOUT);
         MQTTClient_destroy(&g_client);
         g_client = NULL;
@@ -132,16 +140,15 @@ static bool mqtt_do_connect(void)
     }
 
     g_connected = true;
-    printf("[MQTT] connected & subscribed: %s\n", MQTT_TOPIC);
+    printf("[MQTT] ✓ 已连接 %s · 已订阅 %s\n", MQTT_BROKER_ADDR, MQTT_TOPIC);
     return true;
 }
 
-/* Paho 内部线程回调：收到传感器数据 → cJSON 解析 → 存入全局存储 */
+/* Paho 内部线程回调：收到传感器数据 → cJSON 解析 → 整帧推入边缘引擎 */
 static int mqtt_msg_arrived(void * ctx, char * topic, int topic_len,
                              MQTTClient_message * msg)
 {
     (void)ctx;
-    int updated = 0;
     cJSON * root = NULL;
     char * buf = (char *)malloc(msg->payloadlen + 1);
 
@@ -150,24 +157,40 @@ static int mqtt_msg_arrived(void * ctx, char * topic, int topic_len,
         memcpy(buf, msg->payload, msg->payloadlen);
         buf[msg->payloadlen] = '\0';
 
-        printf("[MQTT] recv topic=%.*s  len=%d\n", topic_len, topic,
+        printf("[MQTT] 收到 topic=%.*s  len=%d\n", topic_len, topic,
                msg->payloadlen);
 
-        /* cJSON 解析整条 JSON */
+        /* cJSON 解析整条 JSON → 构造整帧 raw_sample_t → 推入边缘引擎 */
         root = cJSON_Parse(buf);
         if(root) {
+            raw_sample_t s;
+            memset(&s, 0, sizeof(s));
+            s.ts  = (uint32_t)time(NULL);
+            cJSON * seq_item = cJSON_GetObjectItemCaseSensitive(root, "seq");
+            s.seq = cJSON_IsNumber(seq_item) ? (int32_t)seq_item->valuedouble : -1;
+
+            int got = 0;
             for(int i = 0; i < SENSOR_IDX_COUNT; i++) {
                 cJSON * item = cJSON_GetObjectItemCaseSensitive(root, s_keys[i]);
                 if(cJSON_IsNumber(item)) {
-                    app_action_sensor_set((sensor_idx_t)i, (float)item->valuedouble);
-                    updated++;
+                    s.values[i] = (float)item->valuedouble;
+                    got++;
                 }
             }
+            /* 仅完整帧入引擎; 缺字段帧丢弃, 避免污染分析 */
+            if(got == SENSOR_IDX_COUNT) {
+                edge_engine_push(&s);
+                printf("[MQTT] 已入引擎 seq=%d temp=%.1f humi=%.1f light=%.0f do=%.1f ph=%.1f nh3n=%.2f\n",
+                       (int)s.seq, s.values[0], s.values[1], s.values[2],
+                       s.values[3], s.values[4], s.values[5]);
+            } else {
+                printf("[MQTT] 帧不完整 (%d/%d), 已丢弃\n", got, SENSOR_IDX_COUNT);
+            }
+
         } else {
             const char * err = cJSON_GetErrorPtr();
-            printf("[MQTT] JSON parse failed near: %.40s\n", err ? err : "(null)");
+            printf("[MQTT] JSON 解析失败: %.60s\n", err ? err : "(null)");
         }
-        printf("[MQTT] parsed %d/%d sensor values\n", updated, SENSOR_IDX_COUNT);
 
         cJSON_Delete(root);   /* NULL 安全 */
         free(buf);
@@ -181,9 +204,10 @@ static int mqtt_msg_arrived(void * ctx, char * topic, int topic_len,
 static void mqtt_conn_lost(void * ctx, char * cause)
 {
     (void)ctx;
-    printf("[MQTT] connection lost: %s\n", cause ? cause : "unknown");
+    printf("[MQTT] ✗ 连接断开! 原因: %s (将在 10s 内自动重连)\n",
+           cause ? cause : "unknown");
     g_connected = false;
-    /* 断连后清空数据，传感器页恢复 "--" */
+    /* 引擎持久化后断连不清空数据; reset_all 现仅打日志, 卡片保留上次有效值 */
     app_action_sensor_reset_all();
 }
 

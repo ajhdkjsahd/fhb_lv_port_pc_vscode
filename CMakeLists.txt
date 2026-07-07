@@ -78,6 +78,9 @@ file(GLOB LV_PAGE_SRC src/ui/pages/*.c)
 file(GLOB LV_FONT_SRC src/ui/fonts/*.c)
 file(GLOB_RECURSE LV_SMART_WATER_SRC src/ui-smart-water/pages/*.c)
 list(APPEND LV_SMART_WATER_SRC src/ui-smart-water/ui.c)
+# 边缘端数据预处理引擎 (不在 pages/ 下, 单独 glob)
+file(GLOB LV_EDGE_SRC src/ui-smart-water/edge/*.c)
+list(APPEND LV_SMART_WATER_SRC ${LV_EDGE_SRC})
 
 # Create the main executable, depending on the FreeRTOS option
 if(USE_FREERTOS)

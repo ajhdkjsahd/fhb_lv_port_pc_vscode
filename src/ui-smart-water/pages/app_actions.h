@@ -9,6 +9,7 @@ extern "C" {
 #include "lvgl/lvgl.h"
 #include <stdbool.h>
 #include "video-page/video_page.h"
+#include "../edge/sensor_range.h"   /* sensor_idx_t + 物理量程表 (引擎与 UI 共用) */
 
 /* ---- WiFi Status ---- */
 typedef enum {
@@ -62,28 +63,16 @@ void app_action_ai_send(const char * message);
 void app_action_ai_stop(void);
 
 /* ---- Sensor Data (传感器数据) ---- */
-/* 6 路传感器索引：温度 / 湿度 / 光照 / 溶解氧 / pH / 氨氮 */
-typedef enum {
-    SENSOR_IDX_TEMP = 0,   /* 温度     °C    */
-    SENSOR_IDX_HUMI,       /* 湿度     %     */
-    SENSOR_IDX_LIGHT,      /* 光照     %     */
-    SENSOR_IDX_DO,         /* 溶解氧   mg/L  */
-    SENSOR_IDX_PH,         /* pH值     —     */
-    SENSOR_IDX_NH3N,       /* 氨氮     mg/L  */
-    SENSOR_IDX_COUNT
-} sensor_idx_t;
+/* 6 路传感器索引 sensor_idx_t 已移至 sensor_range.h, 供边缘引擎与 UI 共用。 */
 
-/** 读取一路传感器当前值。
- *  优先级：MQTT 真实数据 > 随机游走模拟。
- *  接入真实硬件时，MQTT 自动写入（app_mqtt.c 调用 app_action_sensor_set），
- *  本函数自动切换到真实数据；未收到 MQTT 时继续模拟。 */
+/** 读取一路传感器当前值（来自边缘引擎快照 edge_engine_get_latest）。
+ *  引擎在 MQTT/PC sim 写入并清洗后维护「最近有效值」; 断网/重启不丢失。 */
 bool app_action_sensor_read(sensor_idx_t idx, float * value);
 
-/** MQTT 模块写入真实传感器值（线程安全，可从 MQTT 回调线程调用）。
- *  写入后 app_action_sensor_read 自动优先返回真实值。 */
+/** 写入一路传感器原始值（向后兼容入口; 实际由 app_mqtt.c 调 edge_engine_push）。 */
 void app_action_sensor_set(sensor_idx_t idx, float value);
 
-/** MQTT 断连时重置所有传感器为模拟模式。 */
+/** 旧版「断连清空」入口; 引擎持久化后保留数据, 本函数仅打日志。 */
 void app_action_sensor_reset_all(void);
 
 #ifdef __cplusplus

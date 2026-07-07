@@ -8,6 +8,7 @@
 //
 #include "app_actions.h"
 #include "video-page/video_page.h"
+#include "../edge/edge_engine.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -1561,45 +1562,35 @@ void app_action_ai_stop(void)
 
 /***********************************************************************
  *  ╔══════════════════════════════════════════════════════════════╗
- *  ║  分区 5：传感器数据 — MQTT 真实数据                           ║
- *  ║  页面：sensor_page.c                                          ║
+ *  ║  分区 5：传感器数据 — 边缘引擎快照                            ║
+ *  ║  页面：sensor_page.c / trend_page.c                           ║
  *  ╚══════════════════════════════════════════════════════════════╝
- *  MQTT 模块（app_mqtt.c）收到 JSON → app_action_sensor_set() 写入。
- *  sensor_page 定时器 → app_action_sensor_read() 读取。
- *  未收到 MQTT 数据时不显示（返回 false，卡片保持 "--"）。
- *
- *  线程安全：g_real_values 为 volatile，MQTT 回调线程写入、LVGL 主线程读取。
- *           ARM32 上 aligned 32-bit float 读写天然为原子操作。
- *
- *  量程与告警阈值表在 sensor_page.c 中维护（展示层）。
+ *  数据流: app_mqtt.c 收到 JSON → edge_engine_push(整帧) → worker 线程
+ *          去重/异常过滤/写 eMMC CSV/更新快照+历史环/周期分析。
+ *  sensor_page 定时器 → app_action_sensor_read() = edge_engine_get_latest()。
+ *  断网/重启后快照由引擎从 CSV 重建, 卡片不丢数据。
+ *  量程与告警阈值表在 sensor_page.c 中维护（展示层）；物理量程在
+ *  sensor_range.h（引擎过滤层）。
  ***********************************************************************/
 
-/* ── 真实数据存储（volatile：MQTT 线程写，LVGL 主线程读） ── */
-static volatile float g_real_values[SENSOR_IDX_COUNT];
-static volatile bool  g_has_real[SENSOR_IDX_COUNT];
+/* ── 数据来源：边缘引擎快照（edge_engine 内部线程安全） ──
+ *  MQTT/PC sim → edge_engine_push → worker 清洗+持久化+更新快照。
+ *  本层不再持有任何传感器状态, 仅做转发, 断网/重启后快照由引擎从 eMMC 重建。 */
 
 bool app_action_sensor_read(sensor_idx_t idx, float * value)
 {
-    if(idx < 0 || idx >= SENSOR_IDX_COUNT || value == NULL) return false;
-    if(!g_has_real[idx]) return false;   /* 无数据，不显示 */
-    *value = g_real_values[idx];
-    return true;
+    return edge_engine_get_latest(idx, value, NULL);
 }
 
-/* MQTT 回调线程调用：写入真实传感器值（volatile，线程安全） */
+/* 向后兼容入口：实际数据流由 app_mqtt.c 直接调 edge_engine_push(整帧)。
+ *  单路写入无法构成完整帧, 此处仅作占位, 不再使用。 */
 void app_action_sensor_set(sensor_idx_t idx, float value)
 {
-    if(idx >= 0 && idx < SENSOR_IDX_COUNT) {
-        g_real_values[idx] = value;
-        g_has_real[idx]  = true;
-    }
+    (void)idx; (void)value;
 }
 
-/* MQTT 断连时重置：传感器页降级到模拟 */
+/* 旧版「断连清空」: 引擎持久化后保留数据, 不再清空, 仅打日志。 */
 void app_action_sensor_reset_all(void)
 {
-    for(int i = 0; i < SENSOR_IDX_COUNT; i++) {
-        g_has_real[i] = false;
-    }
-    printf("[sensor] MQTT disconnected — fallback to simulation\n");
+    printf("[sensor] MQTT disconnected — edge engine retains last known data\n");
 }

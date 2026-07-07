@@ -52,6 +52,7 @@ typedef struct {
     home_nav_to_network_cb_t  nav_to_network_cb;
     home_nav_to_ai_chat_cb_t  nav_to_ai_chat_cb;
     home_nav_to_sensor_cb_t   nav_to_sensor_cb;
+    home_nav_to_trend_cb_t    nav_to_trend_cb;
 } home_page_ctx_t;
 
 /**********************
@@ -62,6 +63,7 @@ static void on_gallery_btn_click(lv_event_t * e);
 static void on_network_btn_click(lv_event_t * e);
 static void on_ai_chat_btn_click(lv_event_t * e);
 static void on_sensor_btn_click(lv_event_t * e);
+static void on_trend_btn_click(lv_event_t * e);
 static void on_page_delete(lv_event_t * e);
 static void on_screen_load(lv_event_t * e);
 static void on_screen_unload(lv_event_t * e);
@@ -90,7 +92,8 @@ lv_obj_t * home_page_create(home_nav_to_video_cb_t    nav_to_video_cb,
                             home_nav_to_gallery_cb_t  nav_to_gallery_cb,
                             home_nav_to_network_cb_t  nav_to_network_cb,
                             home_nav_to_ai_chat_cb_t  nav_to_ai_chat_cb,
-                            home_nav_to_sensor_cb_t   nav_to_sensor_cb)
+                            home_nav_to_sensor_cb_t   nav_to_sensor_cb,
+                            home_nav_to_trend_cb_t    nav_to_trend_cb)
 {
     home_page_ctx_t * ctx = lv_malloc(sizeof(home_page_ctx_t));
     if(ctx == NULL) return NULL;
@@ -100,6 +103,7 @@ lv_obj_t * home_page_create(home_nav_to_video_cb_t    nav_to_video_cb,
     ctx->nav_to_network_cb  = nav_to_network_cb;
     ctx->nav_to_ai_chat_cb  = nav_to_ai_chat_cb;
     ctx->nav_to_sensor_cb   = nav_to_sensor_cb;
+    ctx->nav_to_trend_cb    = nav_to_trend_cb;
 
     /* ===== SCREEN（深海垂直渐变：上亮下暗，模拟光从水面射入） ===== */
     lv_obj_t * screen = lv_obj_create(NULL);
@@ -328,7 +332,7 @@ lv_obj_t * home_page_create(home_nav_to_video_cb_t    nav_to_video_cb,
         lv_obj_set_style_pad_all(dock, 10, 0);
         lv_obj_set_flex_flow(dock, LV_FLEX_FLOW_ROW);
         lv_obj_set_flex_align(dock, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-        lv_obj_set_style_pad_column(dock, 10, 0);
+        lv_obj_set_style_pad_column(dock, 8, 0);
         lv_obj_align(dock, LV_ALIGN_BOTTOM_MID, 0, -100);  /* 浮在波浪上方 */
         NO_SCROLL(dock);
 
@@ -337,6 +341,7 @@ lv_obj_t * home_page_create(home_nav_to_video_cb_t    nav_to_video_cb,
         create_nav_pill(dock, "\xEF\x9B\xBF",            "网络通讯", on_network_btn_click, ctx); /* fa-network-wired */
         create_nav_pill(dock, "\xEF\x95\x84",            "AI助手",  on_ai_chat_btn_click, ctx); /* fa-robot */
         create_nav_pill(dock, "\xEF\x98\xA4",            "传感器",  on_sensor_btn_click,  ctx); /* fa-gauge-high */
+        create_nav_pill(dock, "\xEF\x88\x81",            "趋势报表", on_trend_btn_click,   ctx); /* fa-chart-line */
     }
 
     /* ===== 顶部状态条 ===== */
@@ -425,7 +430,7 @@ static lv_obj_t * create_nav_pill(lv_obj_t * parent, const char * icon,
 {
     lv_obj_t * p = lv_obj_create(parent);
     lv_obj_remove_style_all(p);
-    lv_obj_set_size(p, 124, 60);
+    lv_obj_set_size(p, 108, 60);
     lv_obj_set_style_radius(p, 12, 0);
     lv_obj_set_style_bg_color(p, lv_color_hex(C_TEAL), 0);
     lv_obj_set_style_bg_opa(p, LV_OPA_10, 0);
@@ -624,6 +629,12 @@ static void on_sensor_btn_click(lv_event_t * e)
 {
     home_page_ctx_t * ctx = lv_event_get_user_data(e);
     if(ctx && ctx->nav_to_sensor_cb) ctx->nav_to_sensor_cb();
+}
+
+static void on_trend_btn_click(lv_event_t * e)
+{
+    home_page_ctx_t * ctx = lv_event_get_user_data(e);
+    if(ctx && ctx->nav_to_trend_cb) ctx->nav_to_trend_cb();
 }
 
 static void on_page_delete(lv_event_t * e)

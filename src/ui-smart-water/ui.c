@@ -23,7 +23,9 @@
 #include "pages/network-page/network_page.h"
 #include "pages/ai-chat-page/ai_chat_page.h"
 #include "pages/sensor-page/sensor_page.h"
+#include "pages/trend-page/trend_page.h"
 #include "pages/app_mqtt.h"
+#include "edge/edge_engine.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -38,6 +40,8 @@ static lv_obj_t * g_gallery_screen  = NULL;
 static lv_obj_t * g_network_screen  = NULL;
 static lv_obj_t * g_ai_chat_screen  = NULL;
 static lv_obj_t * g_sensor_screen   = NULL;
+static lv_obj_t * g_trend_screen    = NULL;
+static lv_timer_t * g_sim_timer     = NULL;   /* PC 无 MQTT 时喂料给边缘引擎 */
 
 /* Image paths — dynamically scanned from images/ folder.
  * "A:" prefix uses LVGL's STDIO filesystem driver (LV_FS_STDIO_LETTER='A'). */
@@ -55,7 +59,9 @@ static void nav_to_gallery(void);
 static void nav_to_network(void);
 static void nav_to_ai_chat(void);
 static void nav_to_sensor(void);
+static void nav_to_trend(void);
 static void on_login_success_done(void);
+static void sim_timer_cb(lv_timer_t * t);   /* PC/无 MQTT 时模拟传感器喂料 */
 
 /* Page transition: forward=slide-left, back=slide-right, fade for special */
 #define PAGE_FWD   LV_SCR_LOAD_ANIM_MOVE_LEFT,  350, 0, false
@@ -154,13 +160,17 @@ void ui_init(void)
     scan_images_dir();
     app_action_video_scan();
 
+    /* 2.5. 启动边缘引擎 (建目录→worker→从 eMMC 重建快照/历史→加载分析缓存)。
+     *       必须早于 MQTT 与传感器页: 卡片首帧即可显示上次已知值。 */
+    edge_engine_init();
+
     /* 3. Create all screens (callbacks wired to app_actions) */
     g_login_screen    = login_page_create(app_action_login_verify,
                                           nav_to_register,
                                           on_login_success_done);
     g_register_screen = register_page_create(app_action_register_submit,
                                              nav_to_login);
-    g_home_screen     = home_page_create(nav_to_video, nav_to_gallery, nav_to_network, nav_to_ai_chat, nav_to_sensor);
+    g_home_screen     = home_page_create(nav_to_video, nav_to_gallery, nav_to_network, nav_to_ai_chat, nav_to_sensor, nav_to_trend);
     /* Build cover paths from video scan results */
     int vcount = app_action_video_get_count();
     const char ** covers = NULL;
@@ -199,10 +209,15 @@ void ui_init(void)
     /* Sensor monitor page */
     g_sensor_screen   = sensor_page_create(nav_to_home);
 
+    /* Trend report page (历史曲线 + 预测 + 相关性 + 日报, 读边缘引擎) */
+    g_trend_screen    = trend_page_create(nav_to_home);
+
     /* 3.5. MQTT 传感器数据订阅（仅 ARM 板，配置见 app_mqtt.c 顶部宏；
-     *       PC 上 app_mqtt_init 为空桩直接返回 false） */
+     *       PC 上 app_mqtt_init 为空桩直接返回 false）。
+     *       失败时启动模拟喂料, 保证趋势页在 PC/无网环境下可演示。 */
     if(!app_mqtt_init()) {
-        printf("[ui] MQTT unavailable — sensor cards will show '--'\n");
+        printf("[ui] MQTT unavailable — using simulated sensor feed\n");
+        g_sim_timer = lv_timer_create(sim_timer_cb, 3000, NULL);
     }
 
     /* 4. Start on login screen */
@@ -272,9 +287,23 @@ static void nav_to_sensor(void)
     }
 }
 
+static void nav_to_trend(void)
+{
+    if(g_trend_screen) {
+        lv_screen_load_anim(g_trend_screen, PAGE_FWD);
+    }
+}
+
 static void on_login_success_done(void)
 {
     app_keyboard_hide();
     app_action_login_success();
     lv_screen_load_anim(g_home_screen, PAGE_FADE);
+}
+
+/* 无 MQTT 时定时喂一帧模拟采样给边缘引擎 (PC 演示 / 板子无网降级) */
+static void sim_timer_cb(lv_timer_t * t)
+{
+    (void)t;
+    edge_engine_sim_feed();
 }
