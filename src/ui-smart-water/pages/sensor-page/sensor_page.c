@@ -454,6 +454,10 @@ static void timer_cb(lv_timer_t * timer)
     sensor_page_ctx_t * ctx = lv_timer_get_user_data(timer);
     if(ctx) update_sensors(ctx);
 
+    /* 驱动 Paho MQTT 接收循环: ARM 上异步线程常不工作, 必须外部 yield。
+     * 每 1s 调一次, MQTT 数据 3s 来一帧, 每帧至少 catch 一次。 */
+    app_mqtt_yield();
+
     /* MQTT 断线重连: 每 10 秒检查一次 (1s 定时器计数) */
     static int tick = 0;
     if(++tick >= 10) {

@@ -82,6 +82,17 @@ void app_mqtt_ensure_connected(void)
     }
 }
 
+void app_mqtt_yield(void)
+{
+    /* 驱动 Paho 内部接收循环, 把网络缓冲区里的 MQTT 消息分发到
+     * mqtt_msg_arrived 回调。ARM 交叉编译环境下 Paho 的异步接收线程
+     * 常因 pthread 配置不完整而无法工作, 必须由外部定时器驱动。
+     * PC 上异步线程正常时此调用快速返回 (约 10ms 超时)。 */
+    if(g_client) {
+        MQTTClient_yield(g_client, 10);
+    }
+}
+
 /**********************
  *   STATIC FUNCTIONS
  **********************/

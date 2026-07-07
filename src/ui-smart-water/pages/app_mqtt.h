@@ -19,11 +19,18 @@ void app_mqtt_deinit(void);
 /** 检查 MQTT 连接是否存活；断开时非阻塞重连（可从 LVGL 定时器周期调用） */
 void app_mqtt_ensure_connected(void);
 
+/** 驱动 Paho 内部接收循环。
+ *  ARM 交叉编译环境下 Paho 的内部接收线程常无法正常工作，
+ *  必须在 LVGL 定时器中周期调用此函数 (每 1s) 以分发 MQTT 消息到回调。
+ *  PC/MSYS2 上 Paho 异步线程正常时此调用退化为快速返回。 */
+void app_mqtt_yield(void);
+
 #else  /* !APP_USE_MQTT — PC / 未启用 MQTT */
 
 static inline bool app_mqtt_init(void) { return false; }
 static inline void app_mqtt_deinit(void) {}
 static inline void app_mqtt_ensure_connected(void) {}
+static inline void app_mqtt_yield(void) {}
 
 #endif /* APP_USE_MQTT */
 #endif /* APP_MQTT_H */
