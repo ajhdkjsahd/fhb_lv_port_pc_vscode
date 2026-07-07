@@ -11,7 +11,14 @@
 #include "../app_fonts.h"
 #include "../../edge/edge_engine.h"
 #include "../../edge/sensor_range.h"
-#include "lvgl/lvgl_private.h"   /* draw-task API: lv_event_get_draw_task 等 */
+/* 以下 4 个公开头文件提供 Faded area 绘制所需的 draw-task API,
+ * 代替 lvgl_private.h (后者会把 lv_freetype_private.h 拖进来,
+ * 交叉编译环境若 freetype2-devel 路径未配齐会报 ft2build.h 找不到)。 */
+#include "lvgl/core/lv_obj_event.h"     /* lv_event_get_draw_task */
+#include "lvgl/draw/lv_draw.h"           /* lv_draw_task_t, LV_DRAW_TASK_TYPE_LINE, lv_draw_task_get_type/dsc, lv_draw_dsc_base_t */
+#include "lvgl/draw/lv_draw_line.h"      /* lv_draw_line_dsc_t, lv_point_precise_t, LV_DRAW_LINE_POINT_NONE, lv_draw_task_get_line_dsc */
+#include "lvgl/draw/lv_draw_triangle.h"  /* lv_draw_triangle_dsc_init, lv_draw_triangle */
+#include "lvgl/draw/lv_draw_rect.h"      /* lv_draw_rect_dsc_init, lv_draw_rect */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
