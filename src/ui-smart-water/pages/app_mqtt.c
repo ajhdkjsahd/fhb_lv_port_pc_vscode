@@ -89,7 +89,11 @@ void app_mqtt_yield(void)
      * 常因 pthread 配置不完整而无法工作, 必须由外部定时器驱动。
      * PC 上异步线程正常时此调用快速返回 (约 10ms 超时)。 */
     if(g_client) {
-        MQTTClient_yield(g_client, 10);
+#ifdef __linux__
+        MQTTClient_yield();                    /* ARM 旧版 Paho (v1.2-): 无参 */
+#else
+        MQTTClient_yield(g_client, 10);        /* PC 新版 Paho (v1.3+): (client, timeout) */
+#endif
     }
 }
 
