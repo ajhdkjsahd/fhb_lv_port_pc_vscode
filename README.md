@@ -1,6 +1,36 @@
-# 智慧水产养殖系统 — LVGL v9 UI
+# 智慧水产养殖系统 — LVGL v9 + Qwen2.5:7b AI
+
+> 🐟 基于 LVGL v9 的嵌入式智慧水产养殖管理系统。集成 **Qwen2.5:7b 原生 Function Calling**，
+> 10 个硬件/传感器工具，真正实现"自然语言 → 控制板载 LED/蜂鸣器 + 读取水质传感器
+> + 1h 预测趋势分析 + 智能推荐投喂/增氧方案"的完整 AI 闭环。
 
 基于 **LVGL v9** 的智慧水产养殖管理系统，支持 PC 模拟（SDL2）和 **GEC6818 ARM Linux** 嵌入式板卡双平台运行。
+
+### 🧠 AI 核心能力
+
+| 能力 | 实现方式 |
+|------|---------|
+| **水质环境自动评价** | `read_water_quality` — 一次性读 6 路传感器, 对照水产参考区间, 精准评价 |
+| **养殖/设备运维问答** | Qwen2.5:7b 水产养殖知识 + `analyze_environment` 趋势/预测/相关性 |
+| **日志故障诊断** | `analyze_environment` — 1h 预测 + 趋势方向 + 异常剔除数, 预判传感器故障 |
+| **投喂/增氧智能方案** | 基于实时水温 + 溶氧 + pH + 氨氮, 结合养殖参考表, 推荐最优投喂率+增氧时长 |
+
+### 🔧 硬件控制
+
+| 工具 | 硬件 |
+|------|------|
+| `control_led / random_led_on` | D7~D10 LED (sysfs `led1~4`) |
+| `control_buzzer / toggle_buzzer` | GPIO78 蜂鸣器 (软件状态追踪) |
+| `read_button` | GPIO28 K2 按键 (按下=0) |
+| `read_acceleration` | MMA8653 I2C 加速度计 (±2g, ioctl EVIOCGABS) |
+
+### 📡 数据架构
+
+```
+MQTT → edge_engine → CSV 持久化 → 快照 + 回归 + 1h 预测 + 皮尔逊相关性
+  ↑ 写入                              ↓ 读取 (所有数据源一致)
+app_mqtt.c               AI 工具 / 传感器页面 / 趋势报表页
+```
 
 ---
 
@@ -9,13 +39,14 @@
 | 模块 | 说明 |
 |------|------|
 | 登录/注册 | 账号密码验证、注册、成功弹窗动画 |
-| **首页仪表盘** | **海洋沉浸式导航枢纽 — canvas 双层波浪、气泡上浮、鱼影游动、玻璃质感欢迎卡、霓虹药丸导航坞、WiFi 网络状态指示器、离屏自动暂停优化** |
-| **传感器数据监测** | **6 路传感器实时展示 + MQTT 订阅真数据（未收到时不显示），三态告警配色，光照发光特效** |
-| **AI 智能助手** | DeepSeek-R1:7B 对话、思考过程折叠、Ollama HTTP、流式显示 |
-| 视频监控 | mplayer 视频播放、滑动切换视频、封面预览、进度条 |
-| 图片浏览 | 文件夹自动扫描、滑动切换、圆点指示器、缓存预加载 |
-| 网络通讯 | TCP Socket 客户端、收发消息、在线终端显示 |
-| 拼音输入法 | 集成 lv_100ask_pinyin_ime，支持中文拼音输入 |
+| **首页仪表盘** | **海洋沉浸式导航枢纽 — canvas 双层波浪、气泡上浮、鱼影游动、玻璃欢迎卡、霓虹导航坞、WiFi 指示器、离屏暂停优化** |
+| **传感器数据监测** | **6 路传感器实时展示 + MQTT 真数据 + 边缘引擎持久化, 三态告警配色, 光照特效** |
+| **养殖环境趋势报表** | **6 路 Faded area 折线图 + 线性回归预测 + 异常剔除 + 传感器相关性** |
+| **AI 智能助手** | **Qwen2.5:7b 原生 FC — 10 个硬件/传感器工具 — 水质评价/故障诊断/投喂增氧方案** |
+| 视频监控 | mplayer 视频播放、滑动切换、封面预览、进度条 |
+| 图片浏览 | 文件夹扫描、滑动切换、圆点指示器、缓存预加载 |
+| 网络通讯 | TCP Socket 客户端、收发消息、在线终端 |
+| 拼音输入法 | lv_100ask_pinyin_ime，中文拼音输入 |
 
 ---
 
@@ -127,24 +158,39 @@ MQTT 参考实现见 `src/gec6818_mqtt/`（含 pub/sub demo、交叉编译脚本
 
 ```
 src/ui-smart-water/
-├── ui.h / ui.c                  ← 入口，屏幕创建 + 导航
-├── preview/                     ← HTML 预览文件（首页重构 + 传感器页）
-├── fonts/                       ← SIMKAI.TTF（楷体）+ FA6-Free-Solid-900.otf（图标）
-├── images/                      ← 图片资源（.png）
+├── ui.h / ui.c                  ← 入口, 屏幕创建 + 导航
+├── preview/                     ← HTML 预览文件
+├── fonts/                       ← SIMKAI.TTF (楷体) + FA6-Free-Solid-900.otf (图标)
+├── images/                      ← 图片资源 (.png)
+├── libs/cjson/                  ← cJSON 单文件库 (v1.7.18 · 无条件编译)
+├── edge/                        ← 边缘端数据预处理引擎
+│   ├── edge_engine.c/h          ← worker 线程: 去重/异常过滤/CSV 持久化/快照+历史环
+│   ├── edge_analysis.c/h        ← 纯数学: Pearson 相关 + 最小二乘回归 + 预测 + 当日汇总
+│   ├── edge_store.c/h           ← eMMC CSV 读写 + 分析缓存
+│   └── sensor_range.h           ← 6 路传感器索引枚举 + 物理量程表
 └── pages/
-    ├── app_fonts.c/h            ← FreeType 字体加载（kaiti_14/18/24/32 + fa6_20）
-    ├── app_actions.c/h          ← 业务逻辑回调（登录、视频、网络、WiFi、传感器数据存储）
+    ├── app_fonts.c/h            ← FreeType 字体加载
+    ├── app_actions.c/h          ← 业务回调; AI 分区 4: 薄壳 init/send/stop + 事件适配
     ├── app_keyboard.c/h         ← 拼音输入法键盘
     ├── app_popup.c/h            ← Toast 弹窗
+    ├── app_mqtt.c/h             ← MQTT 传感器订阅 (Paho C · ARM 板)
     ├── register-page/           ← 登录 + 注册页面
-    ├── home-page/               ← 首页（海洋沉浸式导航枢纽）
-    ├── app_mqtt.c/h             ← MQTT 传感器订阅（Paho C，ARM 板）
+    ├── home-page/               ← 首页 (海洋沉浸式导航枢纽)
     ├── sensor-page/             ← 传感器数据监测页
+    ├── trend-page/              ← 养殖环境趋势报表页
     ├── video-page/              ← 视频监控页面
     ├── gallery-page/            ← 图片浏览页面
     ├── network-page/            ← 网络通讯页面
-    ├── ai-chat-page/            ← AI 智能助手页面（Ollama / DeepSeek-R1）
-    └── pinyin-ime/              ← lv_100ask_pinyin_ime（适配版）
+    ├── ai-chat-page/            ← AI 对话
+    │   ├── ai_agent.c/h         ← Agent: worker 线程 + HTTP + tool_calls 闭环
+    │   ├── ai_tools.c/h         ← 工具注册表: 10 个硬件/传感器工具 (数据驱动)
+    │   ├── ai_hardware.c/h      ← 板卡硬件层: LED/蜂鸣器/按键/加速度计 (sysfs/GPIO/I2C)
+    │   ├── ai_chat_page.c/h     ← UI: 聊天气泡 + 思考面板 + 输入框 + 快捷提问
+    │   ├── http_client.c/h      ← POSIX socket HTTP/1.1 (select 超时, ARM 适配)
+    │   └── README.md            ← AI 模块完整技术手册 (13 章)
+    └── pinyin-ime/              ← lv_100ask_pinyin_ime (适配版)
+
+src/gec6818_ai_fc/               ← AI-FC 参考骨架 (独立 PC 测试入口 + Makefile)
 ```
 
 ---
@@ -214,39 +260,48 @@ cd /root && ./main
 
 ---
 
-## AI 智能助手
+## AI 智能助手 — Qwen2.5:7b 原生 Function Calling
 
-通过 Ollama 服务器与 **DeepSeek-R1:7B** 大模型对话，纯 POSIX socket 实现 HTTP 客户端，零外部库依赖。支持 PC 模拟和 ARM Linux 板卡。
+通过 Ollama API 调用 **Qwen2.5:7b**，原生 `tool_calls` JSON 协议，**真正控制板载硬件 + 读取水质传感器**。三层架构，Agent/Tools 层不依赖 LVGL，可独立编译测试。
 
 ```
-LVGL 主线程
-  ├─ 发送消息 → pthread_create → ai_recv_thread
-  ├─ ai_recv_thread → http_post() → /api/chat
-  ├─ 解析 JSON → 分离 <think> 思考过程
-  ├─ lv_async_call → 页面更新（思考面板 + 回答气泡）
-  └─ 头像呼吸灯光晕动画
+用户输入 → ai_chat_page (UI · 不变)
+              → app_action_ai_send()          [app_actions.c · 薄壳]
+                 → ai_agent_send()             [ai_agent.c · worker 线程]
+                    → Ollama POST /api/chat    [带 tools schema]
+                    ← model 返回 tool_calls
+                    → ai_tools_dispatch()      [ai_tools.c · 10 个工具]
+                       → ai_execute_action()   [ai_hardware.c · 真实 GPIO/LED/I2C]
+                       → edge_engine_get_latest [6 路水质快照]
+                       → edge_engine_get_analysis [1h 预测 + 相关性]
+                    ← tool 结果回传模型
+                    ← 最终回复
+                    → lv_async_call → AI 气泡
 ```
 
 | 功能 | 说明 |
 |------|------|
-| 思考过程 | `<think>` 标签自动拆分，可折叠面板 |
-| 对话历史 | 环形缓冲区，最多 100 轮上下文 |
-| 思考中提示 | 发送后立即显示"AI 正在思考…"占位 |
-| 停止生成 | 可中途打断 AI 回复 |
-| 清空对话 | 一键清除所有消息 |
-| 快捷提问 | 4 个预设水产养殖问题 |
-| 头像光晕 | 青绿色呼吸灯光晕脉动动画 |
+| **原生 FC 闭环** | Qwen2.5 输出标准 `tool_calls` JSON → C 端解析 → 执行硬件 → 结果回传模型 (最多 3 轮) |
+| **10 个工具** | 全 6 路水质/趋势预测/LED×4/蜂鸣器/按键/加速度 |
+| **数据精度** | 传感器值按 `g_sensor_phys.dec` 四舍五入, 与传感器页/趋势页完全一致 |
+| 思考过程 | `<think>` 标签自动拆分, 工具调用可视化 |
+| 对话历史 | 环形缓冲 100 轮, 含 assistant tool_calls + tool 结果 (带 name 字段) |
+| 快捷提问 | 7 个 (四大能力 + 问候 + LED + 加速度) |
+| PC 模拟桩 | 非 Linux 平台自动退化为模拟回复, 不依赖 Ollama |
 
-**Ollama 配置**（`app_actions.c` 中修改）：
+**完整技术手册**: `src/ui-smart-water/pages/ai-chat-page/README.md` (13 章, 400 行)
+
+**Ollama 配置** (编译期内置, 运行时可通过 `ai_agent_init()` 覆盖):
 
 ```c
-#define OLLAMA_HOST    "192.168.137.1"   // WSL IP
-#define OLLAMA_PORT    11434
-#define OLLAMA_MODEL   "deepseek-r1:7b"
-#define OLLAMA_TMO     300               // 超时秒数
+#ifdef __linux__
+#define OLLAMA_HOST  "192.168.137.1"   // 板子访问 Windows 宿主 Ollama
+#else
+#define OLLAMA_HOST  "localhost"         // PC 模拟 (不真连)
+#endif
+#define OLLAMA_PORT  11434
+#define OLLAMA_MODEL "qwen2.5:7b"
 ```
-
-PC 端 Ollama 客户端源码参考：`src/gec6818_ollama_client/`
 
 ---
 
