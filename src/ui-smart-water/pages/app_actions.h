@@ -10,6 +10,7 @@ extern "C" {
 #include <stdbool.h>
 #include "video-page/video_page.h"
 #include "../edge/sensor_range.h"   /* sensor_idx_t + 物理量程表 (引擎与 UI 共用) */
+#include "../control/control_loop.h"  /* ctrl_mode_t / control_status_t 等控制接口类型 */
 
 /* ---- WiFi Status ---- */
 typedef enum {
@@ -74,6 +75,34 @@ void app_action_sensor_set(sensor_idx_t idx, float value);
 
 /** 旧版「断连清空」入口; 引擎持久化后保留数据, 本函数仅打日志。 */
 void app_action_sensor_reset_all(void);
+
+/* ---- 闭环控制 (PID + PWM) ---- */
+/* 薄 shim: 转发到 control/ 模块。UI 通过这些接口操作控制逻辑,不直接 include
+ *  control_loop.c 的实现, 实现控制逻辑与 LVGL UI 的解耦。
+ *  AI 页面也通过 get_* 接口读取 PID 参数/阈值/定时, 给出建议(手动权仍交给人)。 */
+void          app_action_control_init(void);
+void          app_action_control_step(void);                  /* lv_timer 周期调 */
+void          app_action_control_set_mode(ctrl_mode_t m);
+ctrl_mode_t   app_action_control_get_mode(void);
+void          app_action_control_estop(void);
+void          app_action_control_clear_estop(void);
+
+void          app_action_control_set_pid_gains(float Kp, float Ki, float Kd);
+void          app_action_control_set_aerator_sp(float sp);
+void          app_action_control_set_pump_threshold(float temp_max, float ph_min, float ph_max);
+void          app_action_control_set_feeder_schedule(int h1, int h2, int minutes);
+void          app_action_control_set_feeder_duty(float duty_pct);
+
+void          app_action_control_manual_set_aerator(float duty_pct);
+void          app_action_control_manual_set_pump(bool on);
+void          app_action_control_manual_feed_trigger(void);
+
+void          app_action_control_get_status(control_status_t *out);
+void          app_action_control_get_pid(float *Kp, float *Ki, float *Kd, float *sp);
+void          app_action_control_get_pump_threshold(pump_threshold_t *out);
+void          app_action_control_get_feeder_schedule(feeder_schedule_t *out);
+int           app_action_control_get_pv_history(float *buf, int max);
+int           app_action_control_get_sp_history(float *buf, int max);
 
 #ifdef __cplusplus
 }

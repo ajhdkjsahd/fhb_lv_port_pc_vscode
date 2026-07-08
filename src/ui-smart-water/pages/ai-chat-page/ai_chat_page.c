@@ -293,8 +293,9 @@ lv_obj_t * ai_chat_page_create(ai_chat_back_cb_t  back_cb,
         "根据当前环境数据，推荐最优投喂量和增氧方案",
         "帮我随机点亮一颗LED灯",
         "读取加速度传感器数据，分析板子当前姿态",
+        "读取电机控制配置，给出 PID/阈值/定时 调节建议",
     };
-    for (int qi = 0; qi < 7; qi++) {
+    for (int qi = 0; qi < 8; qi++) {
         lv_obj_t * qbtn = lv_button_create(quick_bar);
         lv_obj_set_size(qbtn, LV_SIZE_CONTENT, 30);
         lv_obj_set_style_pad_hor(qbtn, 12, 0);

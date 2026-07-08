@@ -1160,3 +1160,62 @@ void app_action_sensor_reset_all(void)
 {
     printf("[sensor] MQTT disconnected — edge engine retains last known data\n");
 }
+
+/***********************************************************************
+ *  ╔══════════════════════════════════════════════════════════════╗
+ *  ║  分区 6：闭环控制 — PID + PWM  (control_page)                ║
+ *  ║  薄 shim: 转发到 control/ 模块, UI 不直接碰控制逻辑。        ║
+ *  ║  控制逻辑(PID算法/PWM sysfs/闭环引擎)全部在 control/ 下,     ║
+ *  ║  与 LVGL 完全解耦; 本层只做参数透传与状态查询。              ║
+ *  ╚══════════════════════════════════════════════════════════════╝
+ ***********************************************************************/
+#include "../control/control_loop.h"
+
+void          app_action_control_init(void)             { control_init(); }
+void          app_action_control_step(void)              { control_step(); }
+void          app_action_control_set_mode(ctrl_mode_t m) { control_set_mode(m); }
+ctrl_mode_t   app_action_control_get_mode(void)          { return control_get_mode(); }
+void          app_action_control_estop(void)             { control_estop(); }
+void          app_action_control_clear_estop(void)       { control_clear_estop(); }
+
+void app_action_control_set_pid_gains(float Kp, float Ki, float Kd)
+{ control_set_pid_gains(Kp, Ki, Kd); }
+
+void app_action_control_set_aerator_sp(float sp)
+{ control_set_aerator_sp(sp); }
+
+void app_action_control_set_pump_threshold(float temp_max, float ph_min, float ph_max)
+{ control_set_pump_threshold(temp_max, ph_min, ph_max); }
+
+void app_action_control_set_feeder_schedule(int h1, int h2, int minutes)
+{ control_set_feeder_schedule(h1, h2, minutes); }
+
+void app_action_control_set_feeder_duty(float duty_pct)
+{ control_set_feeder_duty(duty_pct); }
+
+void app_action_control_manual_set_aerator(float duty_pct)
+{ control_manual_set_aerator(duty_pct); }
+
+void app_action_control_manual_set_pump(bool on)
+{ control_manual_set_pump(on); }
+
+void app_action_control_manual_feed_trigger(void)
+{ control_manual_feed_trigger(); }
+
+void app_action_control_get_status(control_status_t *out)
+{ control_get_status(out); }
+
+void app_action_control_get_pid(float *Kp, float *Ki, float *Kd, float *sp)
+{ control_get_pid(Kp, Ki, Kd, sp); }
+
+void app_action_control_get_pump_threshold(pump_threshold_t *out)
+{ control_get_pump_threshold(out); }
+
+void app_action_control_get_feeder_schedule(feeder_schedule_t *out)
+{ control_get_feeder_schedule(out); }
+
+int app_action_control_get_pv_history(float *buf, int max)
+{ return control_get_pv_history(buf, max); }
+
+int app_action_control_get_sp_history(float *buf, int max)
+{ return control_get_sp_history(buf, max); }

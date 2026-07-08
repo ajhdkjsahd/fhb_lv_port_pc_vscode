@@ -53,6 +53,7 @@ typedef struct {
     home_nav_to_ai_chat_cb_t  nav_to_ai_chat_cb;
     home_nav_to_sensor_cb_t   nav_to_sensor_cb;
     home_nav_to_trend_cb_t    nav_to_trend_cb;
+    home_nav_to_control_cb_t  nav_to_control_cb;
 } home_page_ctx_t;
 
 /**********************
@@ -64,6 +65,7 @@ static void on_network_btn_click(lv_event_t * e);
 static void on_ai_chat_btn_click(lv_event_t * e);
 static void on_sensor_btn_click(lv_event_t * e);
 static void on_trend_btn_click(lv_event_t * e);
+static void on_control_btn_click(lv_event_t * e);
 static void on_page_delete(lv_event_t * e);
 static void on_screen_load(lv_event_t * e);
 static void on_screen_unload(lv_event_t * e);
@@ -93,7 +95,8 @@ lv_obj_t * home_page_create(home_nav_to_video_cb_t    nav_to_video_cb,
                             home_nav_to_network_cb_t  nav_to_network_cb,
                             home_nav_to_ai_chat_cb_t  nav_to_ai_chat_cb,
                             home_nav_to_sensor_cb_t   nav_to_sensor_cb,
-                            home_nav_to_trend_cb_t    nav_to_trend_cb)
+                            home_nav_to_trend_cb_t    nav_to_trend_cb,
+                            home_nav_to_control_cb_t  nav_to_control_cb)
 {
     home_page_ctx_t * ctx = lv_malloc(sizeof(home_page_ctx_t));
     if(ctx == NULL) return NULL;
@@ -104,6 +107,7 @@ lv_obj_t * home_page_create(home_nav_to_video_cb_t    nav_to_video_cb,
     ctx->nav_to_ai_chat_cb  = nav_to_ai_chat_cb;
     ctx->nav_to_sensor_cb   = nav_to_sensor_cb;
     ctx->nav_to_trend_cb    = nav_to_trend_cb;
+    ctx->nav_to_control_cb  = nav_to_control_cb;
 
     /* ===== SCREEN（深海垂直渐变：上亮下暗，模拟光从水面射入） ===== */
     lv_obj_t * screen = lv_obj_create(NULL);
@@ -342,6 +346,7 @@ lv_obj_t * home_page_create(home_nav_to_video_cb_t    nav_to_video_cb,
         create_nav_pill(dock, "\xEF\x95\x84",            "AI助手",  on_ai_chat_btn_click, ctx); /* fa-robot */
         create_nav_pill(dock, "\xEF\x98\xA4",            "传感器",  on_sensor_btn_click,  ctx); /* fa-gauge-high */
         create_nav_pill(dock, "\xEF\x88\x81",            "趋势报表", on_trend_btn_click,   ctx); /* fa-chart-line */
+        create_nav_pill(dock, "\xEF\x82\x85",            "闭环控制", on_control_btn_click, ctx); /* fa-gears */
     }
 
     /* ===== 顶部状态条 ===== */
@@ -635,6 +640,12 @@ static void on_trend_btn_click(lv_event_t * e)
 {
     home_page_ctx_t * ctx = lv_event_get_user_data(e);
     if(ctx && ctx->nav_to_trend_cb) ctx->nav_to_trend_cb();
+}
+
+static void on_control_btn_click(lv_event_t * e)
+{
+    home_page_ctx_t * ctx = lv_event_get_user_data(e);
+    if(ctx && ctx->nav_to_control_cb) ctx->nav_to_control_cb();
 }
 
 static void on_page_delete(lv_event_t * e)

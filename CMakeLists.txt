@@ -81,6 +81,9 @@ list(APPEND LV_SMART_WATER_SRC src/ui-smart-water/ui.c)
 # 边缘端数据预处理引擎 (不在 pages/ 下, 单独 glob)
 file(GLOB LV_EDGE_SRC src/ui-smart-water/edge/*.c)
 list(APPEND LV_SMART_WATER_SRC ${LV_EDGE_SRC})
+# 闭环控制算法 (PID / PWM / control_loop, 不依赖 LVGL, 与 edge/ 平级)
+file(GLOB LV_CONTROL_SRC src/ui-smart-water/control/*.c)
+list(APPEND LV_SMART_WATER_SRC ${LV_CONTROL_SRC})
 
 # Create the main executable, depending on the FreeRTOS option
 if(USE_FREERTOS)

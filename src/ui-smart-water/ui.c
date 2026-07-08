@@ -24,6 +24,7 @@
 #include "pages/ai-chat-page/ai_chat_page.h"
 #include "pages/sensor-page/sensor_page.h"
 #include "pages/trend-page/trend_page.h"
+#include "pages/control-page/control_page.h"
 #include "pages/app_mqtt.h"
 #include "edge/edge_engine.h"
 #include <string.h>
@@ -41,6 +42,7 @@ static lv_obj_t * g_network_screen  = NULL;
 static lv_obj_t * g_ai_chat_screen  = NULL;
 static lv_obj_t * g_sensor_screen   = NULL;
 static lv_obj_t * g_trend_screen    = NULL;
+static lv_obj_t * g_control_screen  = NULL;
 static lv_timer_t * g_sim_timer     = NULL;   /* PC 无 MQTT 时喂料给边缘引擎 */
 
 /* Image paths — dynamically scanned from images/ folder.
@@ -60,8 +62,10 @@ static void nav_to_network(void);
 static void nav_to_ai_chat(void);
 static void nav_to_sensor(void);
 static void nav_to_trend(void);
+static void nav_to_control(void);
 static void on_login_success_done(void);
 static void sim_timer_cb(lv_timer_t * t);   /* PC/无 MQTT 时模拟传感器喂料 */
+static void control_step_timer_cb(lv_timer_t * t);  /* 闭环控制周期 (断网独立) */
 
 /* Page transition: forward=slide-left, back=slide-right, fade for special */
 #define PAGE_FWD   LV_SCR_LOAD_ANIM_MOVE_LEFT,  350, 0, false
@@ -170,7 +174,7 @@ void ui_init(void)
                                           on_login_success_done);
     g_register_screen = register_page_create(app_action_register_submit,
                                              nav_to_login);
-    g_home_screen     = home_page_create(nav_to_video, nav_to_gallery, nav_to_network, nav_to_ai_chat, nav_to_sensor, nav_to_trend);
+    g_home_screen     = home_page_create(nav_to_video, nav_to_gallery, nav_to_network, nav_to_ai_chat, nav_to_sensor, nav_to_trend, nav_to_control);
     /* Build cover paths from video scan results */
     int vcount = app_action_video_get_count();
     const char ** covers = NULL;
@@ -211,6 +215,13 @@ void ui_init(void)
 
     /* Trend report page (历史曲线 + 预测 + 相关性 + 日报, 读边缘引擎) */
     g_trend_screen    = trend_page_create(nav_to_home);
+
+    /* 闭环控制页 (PID + PWM) — 控制逻辑在 control/ 模块 (不依赖 LVGL)。
+     * control_init 初始化 PID 默认参数 + 三路 PWM; 全局 step 定时器让闭环
+     * 在任意页面持续运行 (断网独立, 只读 edge 本地缓存)。 */
+    app_action_control_init();
+    g_control_screen  = control_page_create(nav_to_home);
+    lv_timer_create(control_step_timer_cb, 500, NULL);
 
     /* 3.5. MQTT 传感器数据订阅（仅 ARM 板，配置见 app_mqtt.c 顶部宏；
      *       PC 上 app_mqtt_init 为空桩直接返回 false）。
@@ -294,6 +305,13 @@ static void nav_to_trend(void)
     }
 }
 
+static void nav_to_control(void)
+{
+    if(g_control_screen) {
+        lv_screen_load_anim(g_control_screen, PAGE_FWD);
+    }
+}
+
 static void on_login_success_done(void)
 {
     app_keyboard_hide();
@@ -306,4 +324,12 @@ static void sim_timer_cb(lv_timer_t * t)
 {
     (void)t;
     edge_engine_sim_feed();
+}
+
+/* 闭环控制周期 — 驱动 control_step (采集→PID/阈值→PWM→记历史)。
+ * 全局定时器, 任意页面都在跑; control_page 的定时器只负责 UI 刷新。 */
+static void control_step_timer_cb(lv_timer_t * t)
+{
+    (void)t;
+    app_action_control_step();
 }

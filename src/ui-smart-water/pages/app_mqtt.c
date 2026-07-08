@@ -97,6 +97,21 @@ void app_mqtt_yield(void)
     }
 }
 
+bool app_mqtt_publish(const char * topic, const char * payload)
+{
+    /* 下行控制: 向 broker 发布 JSON 命令 (如电机开关)。
+     * 未连接/参数空 → 静默返回 false, 不影响 UI 与控制循环。 */
+    if(!g_client || !g_connected || !topic || !payload) return false;
+    int rc = MQTTClient_publish(g_client, topic, (int)strlen(payload),
+                                (void *)payload, MQTT_QOS, 0, NULL);
+    if(rc != MQTTCLIENT_SUCCESS) {
+        printf("[MQTT] publish 失败 topic=%s rc=%d\n", topic, rc);
+        return false;
+    }
+    printf("[MQTT] → 发布 %s: %s\n", topic, payload);
+    return true;
+}
+
 /**********************
  *   STATIC FUNCTIONS
  **********************/

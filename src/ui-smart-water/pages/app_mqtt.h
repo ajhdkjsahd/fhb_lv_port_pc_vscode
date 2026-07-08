@@ -25,12 +25,17 @@ void app_mqtt_ensure_connected(void);
  *  PC/MSYS2 上 Paho 异步线程正常时此调用退化为快速返回。 */
 void app_mqtt_yield(void);
 
+/** 发布下行控制消息 (如电机开关 {"cmd":"motor","state":1})。
+ *  topic=publish 主题, payload=JSON 字符串。未连接时返回 false。 */
+bool app_mqtt_publish(const char * topic, const char * payload);
+
 #else  /* !APP_USE_MQTT — PC / 未启用 MQTT */
 
 static inline bool app_mqtt_init(void) { return false; }
 static inline void app_mqtt_deinit(void) {}
 static inline void app_mqtt_ensure_connected(void) {}
 static inline void app_mqtt_yield(void) {}
+static inline bool app_mqtt_publish(const char * topic, const char * payload) { (void)topic; (void)payload; return false; }
 
 #endif /* APP_USE_MQTT */
 #endif /* APP_MQTT_H */

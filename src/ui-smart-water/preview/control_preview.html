@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>智能闭环控制 — LVGL 预览</title>
+<style>
+  :root{
+    --bg:#060E14; --card:#0A1620; --card2:#0E1A26; --border:#1C2E36;
+    --accent:#00D4AA; --accent2:#0288D1; --warn:#FFB800; --alarm:#FF6B6B;
+    --text:#E6F2EE; --text2:#9AB8B0; --text3:#5A7A72;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;font-family:"Source Han Sans SC","Microsoft YaHei",sans-serif;}
+  body{background:#000;display:flex;justify-content:center;align-items:center;min-height:100vh;}
+  .screen{
+    width:800px;height:480px;background:var(--bg);position:relative;overflow:hidden;
+    color:var(--text);border:1px solid #000;
+  }
+  /* 顶栏 */
+  .topbar{position:absolute;top:0;left:0;right:0;height:44px;display:flex;align-items:center;
+    padding:0 12px;gap:10px;border-bottom:1px solid var(--border);
+    background:linear-gradient(180deg,#0A1620,#060E14);}
+  .back{width:28px;height:28px;border-radius:6px;border:1px solid var(--border);display:flex;
+    align-items:center;justify-content:center;color:var(--text2);font-size:14px;cursor:pointer;}
+  .title{font-size:15px;font-weight:600;letter-spacing:.5px;}
+  .title .sub{color:var(--accent);font-size:11px;margin-left:6px;font-weight:400;}
+  .spacer{flex:1;}
+  .status{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text2);}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent);}
+  /* Tab 段控（顶栏内，与标题同层） */
+  .tabs{display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-left:6px;}
+  .tab{padding:5px 14px;font-size:12px;color:var(--text3);cursor:pointer;}
+  .tab.on{background:var(--accent);color:#03150F;font-weight:600;}
+  /* 视图容器 */
+  .view{position:absolute;top:44px;left:0;right:0;bottom:0;padding:12px;display:none;}
+  .view.on{display:flex;}
+  .col-l{width:496px;display:flex;flex-direction:column;gap:12px;}
+  .col-r{flex:1;display:flex;flex-direction:column;gap:10px;}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px;}
+  .card-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
+  .card-h .t{font-size:12px;color:var(--text2);letter-spacing:.5px;}
+  .card-h .t b{color:var(--text);font-weight:600;margin-left:4px;}
+  .badge{font-size:10px;padding:2px 7px;border-radius:5px;background:rgba(0,212,170,.12);
+    color:var(--accent);border:1px solid rgba(0,212,170,.3);}
+  .badge.thr{background:rgba(2,136,209,.14);color:#4FC3F7;border-color:rgba(2,136,209,.3);}
+  /* 曲线卡 */
+  .chart-card{flex:1;display:flex;flex-direction:column;}
+  .legend{display:flex;gap:14px;font-size:10px;color:var(--text2);}
+  .legend i{display:inline-block;width:14px;height:2px;margin-right:4px;vertical-align:middle;}
+  .chart-wrap{flex:1;position:relative;}
+  svg{width:100%;height:100%;}
+  /* PWM 条 */
+  .pwm-row{display:flex;align-items:center;gap:10px;}
+  .pwm-row .lab{font-size:11px;color:var(--text2);width:64px;}
+  .bar{flex:1;height:14px;background:#06101A;border:1px solid var(--border);border-radius:7px;overflow:hidden;position:relative;}
+  .bar .fill{height:100%;background:linear-gradient(90deg,var(--accent2),var(--accent));border-radius:7px;
+    box-shadow:0 0 8px rgba(0,212,170,.5);}
+  .pwm-val{font-size:13px;color:var(--accent);font-weight:700;width:46px;text-align:right;font-variant-numeric:tabular-nums;}
+  /* 右栏 */
+  .kv{display:flex;justify-content:space-between;align-items:baseline;padding:4px 0;font-size:12px;}
+  .kv .k{color:var(--text3);}
+  .kv .v{color:var(--text);font-weight:600;font-variant-numeric:tabular-nums;}
+  .kv .v.err{color:var(--accent);}
+  .slider-row{display:flex;align-items:center;gap:8px;margin:6px 0;}
+  .slider-row .k{font-size:11px;color:var(--text2);width:26px;font-weight:600;}
+  .slider-row input[type=range]{flex:1;-webkit-appearance:none;height:4px;border-radius:2px;
+    background:linear-gradient(90deg,var(--accent) var(--p,50%),#1C2E36 var(--p,50%));outline:none;}
+  .slider-row input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;
+    border-radius:50%;background:var(--accent);box-shadow:0 0 6px var(--accent);cursor:pointer;}
+  .slider-row .val{font-size:11px;color:var(--accent);width:38px;text-align:right;font-variant-numeric:tabular-nums;}
+  .dev{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid rgba(28,46,54,.5);font-size:12px;}
+  .dev:last-child{border-bottom:none;}
+  .dev .ddot{width:8px;height:8px;border-radius:50%;}
+  .dev .nm{flex:1;color:var(--text);}
+  .dev .pc{font-size:11px;color:var(--text2);font-variant-numeric:tabular-nums;width:42px;text-align:right;}
+  .on-green{background:var(--accent);box-shadow:0 0 6px var(--accent);}
+  .off-gray{background:var(--text3);}
+  .on-blue{background:var(--accent2);box-shadow:0 0 6px var(--accent2);}
+
+  /* ===== 手动控制视图 ===== */
+  .manual-wrap{flex-direction:column;gap:12px;width:100%;}
+  .dev-row{display:flex;gap:12px;}
+  .dev-card{flex:1;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:10px;}
+  .dev-card .dh{display:flex;align-items:center;justify-content:space-between;}
+  .dev-card .dh .nm{font-size:13px;font-weight:600;color:var(--text);}
+  .dev-card .dh .ind{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--text2);}
+  .dev-card .big{font-size:26px;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums;text-align:center;line-height:1;}
+  .dev-card .big.off{color:var(--text3);}
+  .dev-card .unit{font-size:11px;color:var(--text3);text-align:center;margin-top:-4px;}
+  .mslider input[type=range]{width:100%;-webkit-appearance:none;height:6px;border-radius:3px;
+    background:linear-gradient(90deg,var(--accent) var(--p,45%),#1C2E36 var(--p,45%));outline:none;}
+  .mslider input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;
+    border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent);cursor:pointer;border:2px solid #03150F;}
+  .btn-row{display:flex;gap:8px;}
+  .btn{flex:1;padding:8px 0;text-align:center;font-size:12px;border-radius:7px;cursor:pointer;border:1px solid var(--border);background:#0E1A26;color:var(--text2);font-weight:600;}
+  .btn.on{background:var(--accent);color:#03150F;border-color:var(--accent);}
+  .btn.warn{background:rgba(255,184,0,.15);color:var(--warn);border-color:rgba(255,184,0,.4);}
+  .estop{padding:12px;text-align:center;background:rgba(255,68,85,.12);border:1px solid rgba(255,68,85,.5);
+    border-radius:10px;color:var(--alarm);font-size:14px;font-weight:700;letter-spacing:2px;cursor:pointer;}
+  .estop:active{background:rgba(255,68,85,.3);}
+  .hint{font-size:10px;color:var(--text3);text-align:center;line-height:1.4;}
+  .feedback{font-size:11px;color:var(--text2);text-align:center;padding:7px;background:var(--card2);
+    border:1px solid var(--border);border-radius:8px;letter-spacing:.3px;}
+  .feedback b{color:var(--accent);font-variant-numeric:tabular-nums;font-weight:600;margin:0 1px;}
+  .feedback .sep{color:var(--text3);margin:0 6px;}
+  .dev.clickable{cursor:pointer;transition:background .15s;}
+  .dev.clickable:hover{background:rgba(0,212,170,.07);}
+  /* 弹窗 */
+  .modal-mask{position:absolute;inset:0;background:rgba(0,0,0,.6);display:none;justify-content:center;align-items:center;z-index:20;}
+  .modal-mask.on{display:flex;}
+  .modal{width:340px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;box-shadow:0 8px 30px rgba(0,0,0,.5);}
+  .modal-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;}
+  .modal-h .mt{font-size:14px;font-weight:600;color:var(--text);}
+  .modal-h .close{width:24px;height:24px;border-radius:6px;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--text2);cursor:pointer;font-size:12px;}
+  .modal-h .close:hover{color:var(--alarm);border-color:var(--alarm);}
+  .modal .slider-row{margin:10px 0;}
+  .modal .slider-row .k{width:64px;font-size:12px;color:var(--text2);}
+  .modal .slider-row .val{width:54px;font-size:11px;}
+  .modal input[type=range]::-webkit-slider-thumb{width:14px;height:14px;}
+  .modal-foot{margin-top:10px;font-size:10px;color:var(--text3);text-align:center;line-height:1.4;}
+</style>
+</head>
+<body>
+<div class="screen">
+  <!-- 顶栏 -->
+  <div class="topbar">
+    <div class="back">‹</div>
+    <div class="title">智能闭环控制<span class="sub">PID + PWM</span></div>
+    <div class="tabs"><div class="tab on" data-v="v1">闭环控制(自动)</div><div class="tab" data-v="v2">手动控制</div></div>
+    <div class="spacer"></div>
+    <div class="status"><div class="dot" id="modeDot"></div><span id="modeTxt">自动模式 · PID 闭环</span></div>
+  </div>
+
+  <!-- 视图1: 闭环控制 -->
+  <div class="view on" id="v1">
+    <div class="col-l">
+      <div class="card chart-card">
+        <div class="card-h">
+          <div class="t">溶氧量 DO 闭环曲线<b>6.2 mg/L</b></div>
+          <div class="legend">
+            <span><i style="background:var(--warn);border-top:1px dashed var(--warn);"></i>SP 6.0</span>
+            <span><i style="background:var(--accent);"></i>PV 实际</span>
+          </div>
+        </div>
+        <div class="chart-wrap">
+          <svg viewBox="0 0 460 170" preserveAspectRatio="none">
+            <g stroke="#1C2E36" stroke-width="1">
+              <line x1="0" y1="34" x2="460" y2="34"/><line x1="0" y1="68" x2="460" y2="68"/>
+              <line x1="0" y1="102" x2="460" y2="102"/><line x1="0" y1="136" x2="460" y2="136"/>
+            </g>
+            <line x1="0" y1="85" x2="460" y2="85" stroke="#FFB800" stroke-width="1.5" stroke-dasharray="5,4" opacity=".85"/>
+            <defs><linearGradient id="pvfill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#00D4AA" stop-opacity=".35"/><stop offset="100%" stop-color="#00D4AA" stop-opacity="0"/>
+            </linearGradient></defs>
+            <path d="M0,115 L40,110 L80,105 L120,98 L160,92 L200,88 L240,82 L280,78 L320,72 L360,68 L400,66 L440,64 L460,68 L460,170 L0,170 Z" fill="url(#pvfill)"/>
+            <path d="M0,115 L40,110 L80,105 L120,98 L160,92 L200,88 L240,82 L280,78 L320,72 L360,68 L400,66 L440,64 L460,68" fill="none" stroke="#00D4AA" stroke-width="2"/>
+            <circle cx="460" cy="68" r="3.5" fill="#00D4AA" stroke="#03150F" stroke-width="1.5"/>
+          </svg>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-h"><div class="t">执行器输出<b>增氧机 PWM</b></div><span class="badge">PID 调速</span></div>
+        <div class="pwm-row">
+          <span class="lab">增氧机</span>
+          <div class="bar"><div class="fill" style="width:45%"></div></div>
+          <span class="pwm-val">45%</span>
+        </div>
+      </div>
+    </div>
+    <div class="col-r">
+      <div class="card">
+        <div class="card-h"><div class="t">被控量<b>溶氧 DO</b></div><span class="badge">mg/L</span></div>
+        <div class="kv"><span class="k">实际值 PV</span><span class="v">6.2</span></div>
+        <div class="kv"><span class="k">设定值 SP</span><span class="v" style="color:var(--warn)">6.0</span></div>
+        <div class="kv"><span class="k">误差 e</span><span class="v err">+0.2</span></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><div class="t">PID 参数<b>可调</b></div></div>
+        <div class="slider-row"><span class="k">Kp</span><input type="range" min="0" max="10" step="0.1" value="2.5" style="--p:25%"><span class="val">2.50</span></div>
+        <div class="slider-row"><span class="k">Ki</span><input type="range" min="0" max="2" step="0.01" value="0.10" style="--p:5%"><span class="val">0.10</span></div>
+        <div class="slider-row"><span class="k">Kd</span><input type="range" min="0" max="5" step="0.05" value="0.50" style="--p:10%"><span class="val">0.50</span></div>
+        <div class="slider-row"><span class="k">SP</span><input type="range" min="3" max="9" step="0.1" value="6.0" style="--p:50%"><span class="val">6.0</span></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><div class="t">设备状态<b>3 路</b></div></div>
+        <div class="dev"><span class="ddot on-green"></span><span class="nm">增氧机</span><span class="badge">PID</span><span class="pc">45%</span></div>
+        <div class="dev clickable" onclick="openModal('pump')"><span class="ddot on-blue"></span><span class="nm">循环水泵</span><span class="badge thr">阈值</span><span class="pc">⚙ ON</span></div>
+        <div class="dev clickable" onclick="openModal('feeder')"><span class="ddot off-gray"></span><span class="nm">投喂电机</span><span class="badge thr">定时</span><span class="pc">⚙ OFF</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 视图2: 手动控制 -->
+  <div class="view manual-wrap" id="v2">
+    <div class="feedback">实时反馈<span class="sep">·</span>DO <b>6.2</b> mg/L<span class="sep">·</span>温度 <b>28.5</b>°C<span class="sep">·</span>pH <b>7.2</b><span class="sep">·</span>光照 <b>65</b>%</div>
+    <div class="dev-row">
+      <!-- 增氧机 -->
+      <div class="dev-card">
+        <div class="dh"><span class="nm">增氧机</span><span class="ind"><span class="ddot on-green"></span>运行</span></div>
+        <div class="big">45<span style="font-size:14px">%</span></div>
+        <div class="unit">PWM 占空比</div>
+        <div class="mslider"><input type="range" min="0" max="100" value="45" style="--p:45%"></div>
+        <div class="btn-row"><div class="btn on">ON</div><div class="btn">OFF</div></div>
+      </div>
+      <!-- 循环水泵 -->
+      <div class="dev-card">
+        <div class="dh"><span class="nm">循环水泵</span><span class="ind"><span class="ddot off-gray"></span>停止</span></div>
+        <div class="big off">OFF</div>
+        <div class="unit">阈值: 温度>32°C / pH异常</div>
+        <div class="btn-row" style="margin-top:8px"><div class="btn">ON</div><div class="btn on">OFF</div></div>
+        <div class="hint">手动启动后持续运行<br>直至再次按下 OFF</div>
+      </div>
+      <!-- 投喂电机 -->
+      <div class="dev-card">
+        <div class="dh"><span class="nm">投喂电机</span><span class="ind"><span class="ddot off-gray"></span>停止</span></div>
+        <div class="big off">0<span style="font-size:14px">%</span></div>
+        <div class="unit">投喂量 PWM</div>
+        <div class="mslider"><input type="range" min="0" max="100" value="30" style="--p:30%"></div>
+        <div class="btn-row"><div class="btn warn">单次投喂</div></div>
+      </div>
+    </div>
+    <div class="estop">■ 急停 — 全部设备停止</div>
+    <div class="hint">手动控制 Tab:直接操作三设备,PWM 真实输出到 sysfs。切回「闭环控制」Tab 恢复 PID/阈值自动控制。</div>
+  </div>
+
+  <!-- 弹窗:循环水泵阈值 -->
+  <div class="modal-mask" id="modalPump">
+    <div class="modal">
+      <div class="modal-h"><span class="mt">循环水泵 — 阈值设置</span><div class="close" onclick="closeModal('modalPump')">✕</div></div>
+      <div class="slider-row"><span class="k">温度上限</span><input type="range" class="mrange" data-fmt="temp" min="28" max="36" step="0.5" value="32" style="--p:50%"><span class="val">32.0°C</span></div>
+      <div class="slider-row"><span class="k">pH 下限</span><input type="range" class="mrange" data-fmt="ph" min="5.5" max="7" step="0.1" value="6.5" style="--p:66%"><span class="val">6.5</span></div>
+      <div class="slider-row"><span class="k">pH 上限</span><input type="range" class="mrange" data-fmt="ph" min="7.5" max="9.5" step="0.1" value="9.0" style="--p:75%"><span class="val">9.0</span></div>
+      <div class="modal-foot">超任一阈值 → 自动循环换水 · 全部恢复 → 停止</div>
+    </div>
+  </div>
+
+  <!-- 弹窗:投喂电机定时 -->
+  <div class="modal-mask" id="modalFeeder">
+    <div class="modal">
+      <div class="modal-h"><span class="mt">投喂电机 — 定时设置</span><div class="close" onclick="closeModal('modalFeeder')">✕</div></div>
+      <div class="slider-row"><span class="k">投喂时段1</span><input type="range" class="mrange" data-fmt="time" min="5" max="11" step="1" value="8" style="--p:50%"><span class="val">08:00</span></div>
+      <div class="slider-row"><span class="k">投喂时段2</span><input type="range" class="mrange" data-fmt="time" min="15" max="21" step="1" value="17" style="--p:33%"><span class="val">17:00</span></div>
+      <div class="slider-row"><span class="k">投喂时长</span><input type="range" class="mrange" data-fmt="min" min="5" max="30" step="1" value="15" style="--p:40%"><span class="val">15 分钟</span></div>
+      <div class="modal-foot">到点自动投喂 · 持续设定时长后停止</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.querySelectorAll('.tab').forEach(t=>{
+    t.onclick=()=>{
+      document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
+      document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
+      t.classList.add('on');
+      document.getElementById(t.dataset.v).classList.add('on');
+      const auto = t.dataset.v==='v1';
+      document.getElementById('modeTxt').textContent = auto ? '自动模式 · PID 闭环' : '手动模式 · 人工操作';
+      document.getElementById('modeDot').style.background = auto ? 'var(--accent)' : 'var(--warn)';
+      document.getElementById('modeDot').style.boxShadow = auto ? '0 0 8px var(--accent)' : '0 0 8px var(--warn)';
+    };
+  });
+  // slider 填充联动(预览演示)
+  document.querySelectorAll('input[type=range]').forEach(s=>{
+    s.oninput=()=>{s.style.setProperty('--p',(s.value-s.min)/(s.max-s.min)*100+'%');};
+  });
+  // 弹窗 slider 额外联动数值文字
+  document.querySelectorAll('.mrange').forEach(s=>{
+    const fmt=s.dataset.fmt;
+    s.oninput=()=>{
+      s.style.setProperty('--p',(s.value-s.min)/(s.max-s.min)*100+'%');
+      const v=parseFloat(s.value);
+      let txt=v;
+      if(fmt==='temp')txt=v.toFixed(1)+'°C';
+      else if(fmt==='ph')txt=v.toFixed(1);
+      else if(fmt==='time')txt=String(Math.round(v)).padStart(2,'0')+':00';
+      else if(fmt==='min')txt=Math.round(v)+' 分钟';
+      s.nextElementSibling.textContent=txt;
+    };
+  });
+  function openModal(id){document.getElementById('modal'+id.charAt(0).toUpperCase()+id.slice(1)).classList.add('on');}
+  function closeModal(id){document.getElementById(id).classList.remove('on');}
+</script>
+</body>
+</html>

@@ -24,19 +24,24 @@ typedef void (*home_nav_to_sensor_cb_t)(void);
 /** Callback: called when the "趋势报表" button is clicked */
 typedef void (*home_nav_to_trend_cb_t)(void);
 
+/** Callback: called when the "闭环控制" button is clicked */
+typedef void (*home_nav_to_control_cb_t)(void);
+
 /** Create the home (dashboard) page screen.
  *  nav_to_video_cb:    called when user clicks "视频监控" button
  *  nav_to_gallery_cb:  called when user clicks "图片浏览" button
  *  nav_to_network_cb:  called when user clicks "网络通讯" button
  *  nav_to_ai_chat_cb:  called when user clicks "AI助手" button
  *  nav_to_sensor_cb:   called when user clicks "传感器" button
- *  nav_to_trend_cb:    called when user clicks "趋势报表" button */
+ *  nav_to_trend_cb:    called when user clicks "趋势报表" button
+ *  nav_to_control_cb:  called when user clicks "闭环控制" button */
 lv_obj_t * home_page_create(home_nav_to_video_cb_t    nav_to_video_cb,
                             home_nav_to_gallery_cb_t  nav_to_gallery_cb,
                             home_nav_to_network_cb_t  nav_to_network_cb,
                             home_nav_to_ai_chat_cb_t  nav_to_ai_chat_cb,
                             home_nav_to_sensor_cb_t   nav_to_sensor_cb,
-                            home_nav_to_trend_cb_t    nav_to_trend_cb);
+                            home_nav_to_trend_cb_t    nav_to_trend_cb,
+                            home_nav_to_control_cb_t  nav_to_control_cb);
 
 #ifdef __cplusplus
 }

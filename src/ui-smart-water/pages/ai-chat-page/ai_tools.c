@@ -13,6 +13,7 @@
 #include "ai_tools.h"
 #include "ai_hardware.h"           /* 板卡硬件: ai_execute_action */
 #include "../../edge/edge_engine.h"   /* 水质传感器快照 (含 sensor_idx_t) */
+#include "../app_actions.h"           /* 闭环控制配置读取 (app_action_control_get_*) */
 
 #include "lvgl/lvgl.h"   /* LV_LOG_USER */
 
@@ -363,6 +364,80 @@ static char* tool_analyze_environment(const cJSON *args)
  * 工具注册表 (新增硬件只改这一处)
  * ============================================================ */
 
+/* 读取闭环控制系统当前配置 (PID 参数 / 水泵阈值 / 投喂定时 / 模式 / 实时水质),
+ * 供 AI 评估参数合理性并给出优化建议。只读 — 手动控制权交给人, AI 不直接修改。 */
+static char* tool_read_control_config(const cJSON *args)
+{
+    (void)args;
+    cJSON *o = cJSON_CreateObject();
+    cJSON_AddBoolToObject(o, "ok", true);
+
+    /* 增氧机 PID 参数 */
+    float Kp = 0, Ki = 0, Kd = 0, sp = 0;
+    app_action_control_get_pid(&Kp, &Ki, &Kd, &sp);
+    cJSON *pid = cJSON_CreateObject();
+    cJSON_AddNumberToObject(pid, "Kp", (double)Kp);
+    cJSON_AddNumberToObject(pid, "Ki", (double)Ki);
+    cJSON_AddNumberToObject(pid, "Kd", (double)Kd);
+    cJSON_AddNumberToObject(pid, "setpoint_mgpl", (double)sp);
+    cJSON_AddStringToObject(pid, "note", "增氧机 DO 闭环: 误差 e=SP-实测DO, 输出=PWM% (0~100)");
+    cJSON_AddItemToObject(o, "aerator_pid", pid);
+
+    /* 循环水泵阈值 */
+    pump_threshold_t pt;
+    app_action_control_get_pump_threshold(&pt);
+    cJSON *pump = cJSON_CreateObject();
+    cJSON_AddNumberToObject(pump, "temp_max_c", (double)pt.temp_max);
+    cJSON_AddNumberToObject(pump, "ph_min",     (double)pt.ph_min);
+    cJSON_AddNumberToObject(pump, "ph_max",     (double)pt.ph_max);
+    cJSON_AddStringToObject(pump, "note", "超任一阈值 → 循环水泵自动开启, 全部恢复 → 停止");
+    cJSON_AddItemToObject(o, "pump_threshold", pump);
+
+    /* 投喂电机定时 */
+    feeder_schedule_t fs;
+    app_action_control_get_feeder_schedule(&fs);
+    cJSON *feed = cJSON_CreateObject();
+    cJSON_AddNumberToObject(feed, "feed_hour1",       fs.feed_hour1);
+    cJSON_AddNumberToObject(feed, "feed_hour2",       fs.feed_hour2);
+    cJSON_AddNumberToObject(feed, "duration_minutes", fs.feed_minutes);
+    cJSON_AddStringToObject(feed, "note", "到点自动投喂, 持续设定时长后停止 (无反馈传感器, 纯定时)");
+    cJSON_AddItemToObject(o, "feeder_schedule", feed);
+
+    /* 当前模式 + 设备状态 + 实时水质 */
+    control_status_t st;
+    app_action_control_get_status(&st);
+    cJSON *stat = cJSON_CreateObject();
+    cJSON_AddStringToObject(stat, "mode", st.mode == CTRL_MODE_AUTO ? "auto" : "manual");
+    cJSON_AddNumberToObject(stat, "aerator_pwm_pct", (double)st.aerator_duty);
+    cJSON_AddBoolToObject  (stat, "pump_on",   st.pump_on);
+    cJSON_AddBoolToObject  (stat, "feeder_on", st.feeder_on);
+    cJSON_AddNumberToObject(stat, "current_do_mgpl", round_sensor_val(SENSOR_IDX_DO, st.do_val));
+    cJSON_AddNumberToObject(stat, "current_temp_c",  round_sensor_val(SENSOR_IDX_TEMP, st.temp));
+    cJSON_AddNumberToObject(stat, "current_ph",      round_sensor_val(SENSOR_IDX_PH, st.ph));
+    cJSON_AddItemToObject(o, "current_status", stat);
+
+    /* 建议生成指引 — 强调只读 + 手动权 */
+    cJSON *adv = cJSON_CreateObject();
+    cJSON_AddStringToObject(adv, "permission", "只读: 你只能读取配置并给出建议, 不能直接修改 (手动控制权交给人, 涉及安全)");
+    cJSON_AddStringToObject(adv, "how_to_advise",
+        "结合 current_status 实时水质与 reference 优化区间, 判断当前 PID/阈值/定时是否合理, "
+        "给出建议值及理由。例: DO 长期低于 SP → 建议增大 Kp; 水温常超 32°C → 保持或调低 temp_max; "
+        "投喂时段可结合鱼类摄食规律调整。结尾明确告知: 建议需用户在控制页 slider/弹窗人工确认后才生效。");
+    cJSON_AddItemToObject(o, "advisory", adv);
+
+    /* 优化参考区间 */
+    cJSON *ref = cJSON_CreateObject();
+    cJSON_AddStringToObject(ref, "do",  "目标 5~6 mg/L, SP 建议 6.0 mg/L");
+    cJSON_AddStringToObject(ref, "temp", "安全 <32°C");
+    cJSON_AddStringToObject(ref, "ph",  "安全 6.5~8.5, 理想 7.0~8.0");
+    cJSON_AddStringToObject(ref, "pid_tuning", "Kp 1~5, Ki 0.05~0.5, Kd 0.2~1.0 (DO 闭环典型初值)");
+    cJSON_AddItemToObject(o, "reference", ref);
+
+    char *s = cJSON_PrintUnformatted(o);
+    cJSON_Delete(o);
+    return s;
+}
+
 static const ai_tool_t g_tools[] = {
     {
         "control_led",
@@ -438,6 +513,14 @@ static const ai_tool_t g_tools[] = {
         "换水策略等最优养殖方案, 以及预判设备故障、水质恶化趋势。",
         "{\"type\":\"object\",\"properties\":{}}",
         tool_analyze_environment
+    },
+    {
+        "read_control_config",
+        "读取闭环控制系统当前配置: 增氧机 PID 参数(Kp/Ki/Kd/SP), 循环水泵阈值(温度上限/pH上下限), "
+        "投喂电机定时(两个时段+时长), 以及当前模式/设备状态/实时水质。用于评估控制参数是否合理并给出"
+        "优化建议 (只读, 不修改 — 手动控制权交给人, 涉及安全)。",
+        "{\"type\":\"object\",\"properties\":{}}",
+        tool_read_control_config
     },
 };
 #define TOOL_COUNT (sizeof(g_tools) / sizeof(g_tools[0]))
