@@ -29,6 +29,8 @@
 #define ICON_SEND    "\xEF\x87\x98"  /* fa-paper-plane */
 #define ICON_STOP    "\xEF\x81\x8D"  /* fa-stop */
 #define ICON_WATER   "\xEF\x9B\x83"  /* fa-water */
+#define ICON_CHEV_DOWN "\xEF\x81\xB8"  /* fa-chevron-down  快捷栏展开(可收起) */
+#define ICON_CHEV_UP   "\xEF\x81\xB7"  /* fa-chevron-up    快捷栏收起(可展开) */
 
 /**********************
  *      TYPEDEFS
@@ -73,6 +75,11 @@ typedef struct {
     int    current_ai_idx;   /* Index of streaming AI message, -1 if none */
     bool   streaming;
     bool   cursor_visible;
+
+    lv_obj_t * quick_bar;      /* 快捷提问栏 (折叠目标) */
+    lv_obj_t * fold_btn;       /* 折叠/展开按钮 */
+    lv_obj_t * fold_label;     /* 按钮图标标签 (▼/▲) */
+    bool       quick_folded;   /* 是否已折叠 */
 } ai_chat_ctx_t;
 
 /**********************
@@ -85,6 +92,7 @@ static void on_stop_click(lv_event_t * e);
 static void on_clear_click(lv_event_t * e);
 static void on_input_click(lv_event_t * e);
 static void on_quick_click(lv_event_t * e);
+static void on_fold_click(lv_event_t * e);
 static void on_page_delete(lv_event_t * e);
 static void on_think_header_click(lv_event_t * e);
 static void cursor_blink_cb(lv_timer_t * t);
@@ -284,6 +292,8 @@ lv_obj_t * ai_chat_page_create(ai_chat_back_cb_t  back_cb,
     lv_obj_set_style_pad_row(quick_bar, 4, 0);
     lv_obj_set_style_pad_column(quick_bar, 6, 0);
     NO_SCROLL(quick_bar);
+    ctx->quick_bar    = quick_bar;
+    ctx->quick_folded = false;
 
     static const char * quick_msgs[] = {
         "你好，请介绍一下你自己和你的能力",
@@ -410,6 +420,25 @@ lv_obj_t * ai_chat_page_create(ai_chat_back_cb_t  back_cb,
     lv_obj_set_style_text_color(stop_label, lv_color_hex(0xFF6B6B), 0);
     lv_obj_set_style_text_font(stop_label, app_font_fa6_20(), 0);
     lv_obj_center(stop_label);
+
+    /* Fold quick bar button (▼展开 / ▲收起) */
+    lv_obj_t * fold_btn = lv_button_create(input_bar);
+    lv_obj_set_size(fold_btn, 42, 38);
+    lv_obj_set_style_radius(fold_btn, 10, 0);
+    lv_obj_set_style_bg_color(fold_btn, lv_color_hex(0x0A1620), 0);
+    lv_obj_set_style_border_width(fold_btn, 1, 0);
+    lv_obj_set_style_border_color(fold_btn, lv_color_hex(0x1C2E36), 0);
+    lv_obj_set_style_shadow_width(fold_btn, 0, 0);
+    NO_SCROLL(fold_btn);
+    lv_obj_add_event_cb(fold_btn, on_fold_click, LV_EVENT_CLICKED, ctx);
+    ctx->fold_btn = fold_btn;
+
+    lv_obj_t * fold_label = lv_label_create(fold_btn);
+    lv_label_set_text(fold_label, ICON_CHEV_DOWN);  /* 默认展开: ▼ 表示可收起 */
+    lv_obj_set_style_text_color(fold_label, lv_color_hex(0x5A7A72), 0);
+    lv_obj_set_style_text_font(fold_label, app_font_fa6_20(), 0);
+    lv_obj_center(fold_label);
+    ctx->fold_label = fold_label;
 
     return screen;
 }
@@ -815,6 +844,21 @@ static void on_quick_click(lv_event_t * e)
 
     lv_textarea_set_text(ctx->msg_input, qtext);
     do_send(ctx);
+}
+
+static void on_fold_click(lv_event_t * e)
+{
+    ai_chat_ctx_t * ctx = lv_event_get_user_data(e);
+    ctx->quick_folded = !ctx->quick_folded;
+    if (ctx->quick_folded) {
+        lv_obj_add_flag(ctx->quick_bar, LV_OBJ_FLAG_HIDDEN);
+        lv_label_set_text(ctx->fold_label, ICON_CHEV_UP);   /* ▲ 可展开 */
+        lv_obj_set_style_text_color(ctx->fold_label, lv_color_hex(0x00D4AA), 0);
+    } else {
+        lv_obj_clear_flag(ctx->quick_bar, LV_OBJ_FLAG_HIDDEN);
+        lv_label_set_text(ctx->fold_label, ICON_CHEV_DOWN); /* ▼ 可收起 */
+        lv_obj_set_style_text_color(ctx->fold_label, lv_color_hex(0x5A7A72), 0);
+    }
 }
 
 static void on_page_delete(lv_event_t * e)
