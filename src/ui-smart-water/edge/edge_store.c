@@ -172,6 +172,10 @@ void store_compute_daily(daily_t out[SENSOR_IDX_COUNT])
                 sum[i] += v;
                 out[i].count++;
                 out[i].valid = true;
+                /* 异常阈值检查: 超限计入剔除 (与传感器页红绿判定统一阈值) */
+                if(g_sensor_warn[i].enabled &&
+                   (v < g_sensor_warn[i].warn_lo || v > g_sensor_warn[i].warn_hi))
+                    out[i].reject++;
             }
         } else {
             /* 整帧剔除 → 6 路 reject 各 +1 (与引擎运行计数口径一致) */
@@ -272,6 +276,47 @@ void store_save_analysis(const edge_analysis_t * in)
         const daily_t * d = &in->daily[i];
         fprintf(f, "daily %d %.3f %.3f %.3f %d %d %d\n", i,
                 d->min, d->max, d->mean, d->count, d->reject, d->valid ? 1 : 0);
+    }
+    fclose(f);
+}
+
+/* ── 用户告警阈值持久化 (analysis/warn_thresholds.txt, 纯文本) ── */
+static const char * store_warn_path(void)
+{
+    static char buf[256];
+    snprintf(buf, sizeof(buf), "%s/analysis/warn_thresholds.txt", DATA_ROOT);
+    return buf;
+}
+
+void store_load_warn(sensor_warn_t out[SENSOR_IDX_COUNT])
+{
+    if(out == NULL) return;
+    FILE * f = fopen(store_warn_path(), "r");
+    if(f == NULL) return;   /* 首次运行, 用默认值 */
+
+    char line[64];
+    while(fgets(line, sizeof(line), f)) {
+        int idx, en;
+        float lo, hi;
+        if(sscanf(line, "warn %d %f %f %d", &idx, &lo, &hi, &en) == 4 &&
+           idx >= 0 && idx < SENSOR_IDX_COUNT) {
+            out[idx].warn_lo = lo;
+            out[idx].warn_hi = hi;
+            out[idx].enabled = en != 0;
+        }
+    }
+    fclose(f);
+    printf("[edge] loaded user warn thresholds from %s\n", store_warn_path());
+}
+
+void store_save_warn(const sensor_warn_t in[SENSOR_IDX_COUNT])
+{
+    if(in == NULL) return;
+    FILE * f = fopen(store_warn_path(), "w");
+    if(f == NULL) return;
+    for(int i = 0; i < SENSOR_IDX_COUNT; i++) {
+        fprintf(f, "warn %d %.1f %.1f %d\n", i,
+                in[i].warn_lo, in[i].warn_hi, in[i].enabled ? 1 : 0);
     }
     fclose(f);
 }

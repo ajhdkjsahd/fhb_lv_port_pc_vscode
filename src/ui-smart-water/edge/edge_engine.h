@@ -91,6 +91,10 @@ bool edge_engine_get_latest(sensor_idx_t idx, float * value, uint32_t * ts);
 int  edge_engine_get_history(sensor_idx_t idx, float * buf, int max);
 bool edge_engine_get_analysis(edge_analysis_t * out);
 
+/* ===== 异常告警阈值读写 (传感器页可配置, 与剔除计数统一) ===== */
+bool edge_engine_get_warn(sensor_idx_t idx, float * lo, float * hi);
+void edge_engine_set_warn(sensor_idx_t idx, float lo, float hi);
+
 /* ===== PC 模拟喂料 (无 MQTT 时由 ui.c 定时调用) =====
  *  复刻 mqtt_pub_demo.c 的随机生成逻辑, 便于 Windows 上演示趋势页。 */
 void edge_engine_sim_feed(void);

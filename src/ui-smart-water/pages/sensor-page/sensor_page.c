@@ -5,6 +5,7 @@
 #include "../app_fonts.h"
 #include "../app_actions.h"
 #include "../app_mqtt.h"
+#include "../../edge/edge_engine.h"   /* edge_engine_get/set_warn: 动态阈值 */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -67,6 +68,13 @@ typedef struct {
     sensor_card_t cards[SENSOR_IDX_COUNT];
     lv_timer_t * timer;
     sensor_back_cb_t back_cb;
+    /* 阈值弹窗 */
+    lv_obj_t * modal;
+    lv_obj_t * modal_lo_sl, * modal_hi_sl;
+    lv_obj_t * modal_lo_v,  * modal_hi_v;
+    lv_obj_t * modal_icon;     /* 弹窗标题图标 (每传感器不同) */
+    lv_obj_t * modal_title;
+    int        modal_idx;
 } sensor_page_ctx_t;
 
 /**********************
@@ -74,11 +82,15 @@ typedef struct {
  **********************/
 static void on_back_click(lv_event_t * e);
 static void on_page_delete(lv_event_t * e);
+static void on_card_click(lv_event_t * e);
+static void on_modal_close(lv_event_t * e);
+static void on_thr_slider(lv_event_t * e);
 static void timer_cb(lv_timer_t * timer);
 static void live_dot_glow_cb(void * var, int32_t v);
 static void create_sensor_card(lv_obj_t * body, int idx, sensor_page_ctx_t * ctx);
+static void build_threshold_modal(sensor_page_ctx_t * ctx);
 static void update_sensors(sensor_page_ctx_t * ctx);
-static sensor_status_t compute_status(const sensor_meta_t * m, float v);
+static sensor_status_t compute_status(float v, float warn_lo, float warn_hi);
 static lv_color_t status_color(sensor_status_t st);
 
 /**********************
@@ -264,6 +276,9 @@ lv_obj_t * sensor_page_create(sensor_back_cb_t back_cb)
     lv_obj_set_style_text_font(ftxt, app_font_kaiti_14(), 0);
     lv_obj_set_style_text_color(ftxt, lv_color_hex(COLOR_TEXT3), 0);
 
+    /* ===== 阈值弹窗 (默认隐藏, 点击卡片打开) ===== */
+    build_threshold_modal(ctx);
+
     /* ===== 1 秒刷新定时器 + 首帧立即填充 ===== */
     ctx->timer = lv_timer_create(timer_cb, 1000, ctx);
     update_sensors(ctx);
@@ -321,6 +336,9 @@ static void create_sensor_card(lv_obj_t * body, int idx, sensor_page_ctx_t * ctx
     lv_obj_set_flex_flow(badge, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(badge, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     NO_SCROLL(badge);
+    /* 点击 logo → 打开阈值弹窗 */
+    lv_obj_add_flag(badge, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(badge, on_card_click, LV_EVENT_CLICKED, ctx);
     ctx->cards[idx].icon_badge = badge;
 
     lv_obj_t * icon = lv_label_create(badge);
@@ -382,12 +400,15 @@ static void create_sensor_card(lv_obj_t * body, int idx, sensor_page_ctx_t * ctx
     ctx->cards[idx].bar = bar;
 }
 
-/* 判定单路传感器状态（基于阈值带） */
-static sensor_status_t compute_status(const sensor_meta_t * m, float v)
+/* 判定单路传感器状态 (基于动态阈值 warn_lo/hi — 来自 edge_engine, 用户可配) */
+static sensor_status_t compute_status(float v, float warn_lo, float warn_hi)
 {
-    if(v < m->warn_lo || v > m->warn_hi) return SENSOR_STATUS_ALARM;
-    if((v >= m->warn_lo && v < m->safe_lo) || (v > m->safe_hi && v <= m->warn_hi))
-        return SENSOR_STATUS_WARN;
+    if(v < warn_lo || v > warn_hi) return SENSOR_STATUS_ALARM;
+    /* 安全带 = 阈值区间中间 70%, 外边沿 15% 为预警 */
+    float margin = (warn_hi - warn_lo) * 0.15f;
+    float safe_lo = warn_lo + margin;
+    float safe_hi = warn_hi - margin;
+    if(v < safe_lo || v > safe_hi) return SENSOR_STATUS_WARN;
     return SENSOR_STATUS_NORMAL;
 }
 
@@ -410,6 +431,10 @@ static void update_sensors(sensor_page_ctx_t * ctx)
         const sensor_meta_t * m = &g_sensors[i];
         sensor_card_t * c = &ctx->cards[i];
 
+        /* 读动态异常阈值 (用户可配, 与日报剔除共用) */
+        float warn_lo, warn_hi;
+        edge_engine_get_warn((sensor_idx_t)i, &warn_lo, &warn_hi);
+
         /* 数值文本 */
         char buf[16];
         snprintf(buf, sizeof(buf), "%.*f", m->dec, v);
@@ -421,8 +446,8 @@ static void update_sensors(sensor_page_ctx_t * ctx)
         if(pct > 100) pct = 100;
         lv_bar_set_value(c->bar, pct, LV_ANIM_OFF);
 
-        /* 三态配色 */
-        sensor_status_t st = compute_status(m, v);
+        /* 三态配色 (基于可配置阈值 — 与剔除计数用同一套) */
+        sensor_status_t st = compute_status(v, warn_lo, warn_hi);
         lv_color_t col = status_color(st);
 
         lv_obj_set_style_bg_color(c->dot, col, 0);
@@ -483,4 +508,236 @@ static void on_page_delete(lv_event_t * e)
     if(ctx == NULL) return;
     if(ctx->timer) lv_timer_delete(ctx->timer);
     lv_free(ctx);
+}
+
+/* ===== 阈值弹窗构建 (默认隐藏, on_card_click 显示) ===== */
+static void build_threshold_modal(sensor_page_ctx_t * ctx)
+{
+    lv_obj_t * mask = lv_obj_create(ctx->screen);
+    lv_obj_remove_style_all(mask);
+    lv_obj_set_size(mask, 800, 480);
+    lv_obj_set_style_bg_color(mask, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_opa(mask, LV_OPA_60, 0);
+    lv_obj_add_flag(mask, LV_OBJ_FLAG_HIDDEN);
+    NO_SCROLL(mask);
+    ctx->modal = mask;
+
+    lv_obj_t * box = lv_obj_create(mask);
+    lv_obj_remove_style_all(box);
+    lv_obj_set_pos(box, 180, 70);
+    lv_obj_set_size(box, 440, LV_SIZE_CONTENT);
+    lv_obj_set_style_radius(box, 14, 0);
+    lv_obj_set_style_bg_color(box, lv_color_hex(COLOR_CARD), 0);
+    lv_obj_set_style_bg_opa(box, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(box, 1, 0);
+    lv_obj_set_style_border_color(box, lv_color_hex(COLOR_BORDER), 0);
+    lv_obj_set_style_pad_all(box, 16, 0);
+    lv_obj_set_style_clip_corner(box, true, 0);
+
+    /* 内容区: flex column, 交叉轴居中 → header + slider 自然排列不重叠 */
+    lv_obj_t * bw = lv_obj_create(box);
+    lv_obj_remove_style_all(bw);
+    lv_obj_set_pos(bw, 0, 0);
+    lv_obj_set_size(bw, 408, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(bw, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(bw, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(bw, 10, 0);
+    NO_SCROLL(bw);
+
+    /* ── header 行: [logo图标] [标题文字] ... [X关闭] ── */
+    lv_obj_t * hdr = lv_obj_create(bw);
+    lv_obj_remove_style_all(hdr);
+    lv_obj_set_width(hdr, lv_pct(100));
+    lv_obj_set_height(hdr, 36);
+    lv_obj_set_flex_flow(hdr, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(hdr, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(hdr, 8, 0);
+    lv_obj_set_style_pad_bottom(hdr, 8, 0);
+    lv_obj_set_style_border_width(hdr, 1, 0);
+    lv_obj_set_style_border_side(hdr, LV_BORDER_SIDE_BOTTOM, 0);
+    lv_obj_set_style_border_color(hdr, lv_color_hex(COLOR_BORDER), 0);
+    NO_SCROLL(hdr);
+
+    ctx->modal_icon = lv_label_create(hdr);
+    lv_obj_set_style_text_font(ctx->modal_icon, app_font_fa6_20(), 0);
+    lv_obj_set_style_text_color(ctx->modal_icon, lv_color_hex(COLOR_ACCENT), 0);
+
+    ctx->modal_title = lv_label_create(hdr);
+    lv_obj_set_style_text_font(ctx->modal_title, app_font_kaiti_18(), 0);
+    lv_obj_set_style_text_color(ctx->modal_title, lv_color_hex(COLOR_TEXT), 0);
+
+    /* 弹性占位把关闭按钮推到右侧 */
+    lv_obj_t * hsp = lv_obj_create(hdr);
+    lv_obj_remove_style_all(hsp);
+    lv_obj_set_flex_grow(hsp, 1);
+
+    lv_obj_t * close = lv_button_create(hdr);
+    lv_obj_set_size(close, 32, 32);
+    lv_obj_set_style_radius(close, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(close, lv_color_hex(0x2A1518), 0);
+    lv_obj_set_style_bg_opa(close, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(close, 1, 0);
+    lv_obj_set_style_border_color(close, lv_color_hex(COLOR_ALARM), 0);
+    lv_obj_set_style_pad_all(close, 0, 0);
+    lv_obj_t * cl = lv_label_create(close);
+    lv_label_set_text(cl, "X");
+    lv_obj_set_style_text_font(cl, app_font_kaiti_18(), 0);
+    lv_obj_set_style_text_color(cl, lv_color_hex(COLOR_ALARM), 0);
+    lv_obj_center(cl);
+    lv_obj_add_event_cb(close, on_modal_close, LV_EVENT_CLICKED, ctx);
+
+    /* ── 下限 slider (90% 居中) ── */
+    lv_obj_t * lorow = lv_obj_create(bw);
+    lv_obj_remove_style_all(lorow);
+    lv_obj_set_width(lorow, lv_pct(90));
+    lv_obj_set_height(lorow, 30);
+    lv_obj_set_flex_flow(lorow, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(lorow, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(lorow, 8, 0);
+    NO_SCROLL(lorow);
+    lv_obj_t * lol = lv_label_create(lorow);
+    lv_label_set_text(lol, "下限");
+    lv_obj_set_style_text_font(lol, app_font_kaiti_14(), 0);
+    lv_obj_set_style_text_color(lol, lv_color_hex(COLOR_TEXT3), 0);
+    ctx->modal_lo_sl = lv_slider_create(lorow);
+    lv_obj_set_flex_grow(ctx->modal_lo_sl, 1);
+    lv_obj_set_height(ctx->modal_lo_sl, 6);
+    lv_obj_set_style_radius(ctx->modal_lo_sl, 3, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(ctx->modal_lo_sl, lv_color_hex(COLOR_BORDER), LV_PART_MAIN);
+    lv_obj_set_style_radius(ctx->modal_lo_sl, 3, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(ctx->modal_lo_sl, lv_color_hex(COLOR_WARN), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(ctx->modal_lo_sl, lv_color_hex(COLOR_WARN), LV_PART_KNOB);
+    lv_obj_set_style_pad_all(ctx->modal_lo_sl, 3, LV_PART_KNOB);
+    lv_obj_add_event_cb(ctx->modal_lo_sl, on_thr_slider, LV_EVENT_VALUE_CHANGED, ctx);
+    ctx->modal_lo_v = lv_label_create(lorow);
+    lv_obj_set_style_text_font(ctx->modal_lo_v, app_font_kaiti_14(), 0);
+    lv_obj_set_style_text_color(ctx->modal_lo_v, lv_color_hex(COLOR_WARN), 0);
+    lv_obj_set_width(ctx->modal_lo_v, 60);
+    lv_obj_set_style_text_align(ctx->modal_lo_v, LV_TEXT_ALIGN_RIGHT, 0);
+
+    /* ── 上限 slider (90% 居中) ── */
+    lv_obj_t * hirow = lv_obj_create(bw);
+    lv_obj_remove_style_all(hirow);
+    lv_obj_set_width(hirow, lv_pct(90));
+    lv_obj_set_height(hirow, 30);
+    lv_obj_set_flex_flow(hirow, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(hirow, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(hirow, 8, 0);
+    NO_SCROLL(hirow);
+    lv_obj_t * hil = lv_label_create(hirow);
+    lv_label_set_text(hil, "上限");
+    lv_obj_set_style_text_font(hil, app_font_kaiti_14(), 0);
+    lv_obj_set_style_text_color(hil, lv_color_hex(COLOR_TEXT3), 0);
+    ctx->modal_hi_sl = lv_slider_create(hirow);
+    lv_obj_set_flex_grow(ctx->modal_hi_sl, 1);
+    lv_obj_set_height(ctx->modal_hi_sl, 6);
+    lv_obj_set_style_radius(ctx->modal_hi_sl, 3, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(ctx->modal_hi_sl, lv_color_hex(COLOR_BORDER), LV_PART_MAIN);
+    lv_obj_set_style_radius(ctx->modal_hi_sl, 3, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(ctx->modal_hi_sl, lv_color_hex(COLOR_ALARM), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(ctx->modal_hi_sl, lv_color_hex(COLOR_ALARM), LV_PART_KNOB);
+    lv_obj_set_style_pad_all(ctx->modal_hi_sl, 3, LV_PART_KNOB);
+    lv_obj_add_event_cb(ctx->modal_hi_sl, on_thr_slider, LV_EVENT_VALUE_CHANGED, ctx);
+    ctx->modal_hi_v = lv_label_create(hirow);
+    lv_obj_set_style_text_font(ctx->modal_hi_v, app_font_kaiti_14(), 0);
+    lv_obj_set_style_text_color(ctx->modal_hi_v, lv_color_hex(COLOR_ALARM), 0);
+    lv_obj_set_width(ctx->modal_hi_v, 60);
+    lv_obj_set_style_text_align(ctx->modal_hi_v, LV_TEXT_ALIGN_RIGHT, 0);
+
+    /* 提示 */
+    lv_obj_t * hint = lv_label_create(bw);
+    lv_label_set_text(hint, "超出范围触发告警并计入剔除");
+    lv_obj_set_style_text_font(hint, app_font_kaiti_14(), 0);
+    lv_obj_set_style_text_color(hint, lv_color_hex(COLOR_TEXT3), 0);
+}
+
+/* 卡片点击 → 打开阈值弹窗 */
+static void on_card_click(lv_event_t * e)
+{
+    sensor_page_ctx_t * ctx = lv_event_get_user_data(e);
+    lv_obj_t * target = lv_event_get_target_obj(e);
+    /* 被点是 logo 底座(icon_badge), 找到对应传感器索引 */
+    int idx = -1;
+    for(int i = 0; i < SENSOR_IDX_COUNT; i++) {
+        if(ctx->cards[i].icon_badge == target) { idx = i; break; }
+    }
+    if(idx < 0) return;
+    ctx->modal_idx = idx;
+
+    const sensor_meta_t  * sm = &g_sensors[idx];
+    const sensor_phys_t  * sp = &g_sensor_phys[idx];
+
+    /* 弹窗图标匹配当前传感器 */
+    lv_label_set_text(ctx->modal_icon, sm->icon);
+
+    /* scale: 与 dec 对齐 → pH/NH3N ×100, 一般 ×10, 光照 ×1 */
+    int scale = (sp->dec >= 2) ? 100 : (sp->dec >= 1) ? 10 : 1;
+
+    /* 读当前阈值 */
+    float cur_lo, cur_hi;
+    edge_engine_get_warn((sensor_idx_t)idx, &cur_lo, &cur_hi);
+
+    int lo_min = (int)(sp->phys_min * (float)scale);
+    int lo_max = (int)(sp->phys_max * (float)scale);
+    int hi_min = lo_min;
+    int hi_max = lo_max;
+    int cur_lo_i = (int)(cur_lo * (float)scale);
+    int cur_hi_i = (int)(cur_hi * (float)scale);
+    if(cur_lo_i < lo_min) cur_lo_i = lo_min;
+    if(cur_hi_i > hi_max) cur_hi_i = hi_max;
+
+    lv_slider_set_range(ctx->modal_lo_sl, lo_min, lo_max);
+    lv_slider_set_range(ctx->modal_hi_sl, hi_min, hi_max);
+    lv_slider_set_value(ctx->modal_lo_sl, cur_lo_i, LV_ANIM_OFF);
+    lv_slider_set_value(ctx->modal_hi_sl, cur_hi_i, LV_ANIM_OFF);
+
+    /* 标题: [名称] 异常阈值 */
+    char tbuf[64];
+    snprintf(tbuf, sizeof(tbuf), "%s · 异常阈值设置", sm->name);
+    lv_label_set_text(ctx->modal_title, tbuf);
+
+    /* 更新值显示 */
+    char vbuf[16];
+    snprintf(vbuf, sizeof(vbuf), "%.*f%s", sp->dec, cur_lo, sp->unit);
+    lv_label_set_text(ctx->modal_lo_v, vbuf);
+    snprintf(vbuf, sizeof(vbuf), "%.*f%s", sp->dec, cur_hi, sp->unit);
+    lv_label_set_text(ctx->modal_hi_v, vbuf);
+
+    lv_obj_clear_flag(ctx->modal, LV_OBJ_FLAG_HIDDEN);
+}
+
+/* 关闭弹窗 */
+static void on_modal_close(lv_event_t * e)
+{
+    sensor_page_ctx_t * ctx = lv_event_get_user_data(e);
+    lv_obj_add_flag(ctx->modal, LV_OBJ_FLAG_HIDDEN);
+}
+
+/* 阈值 slider 拖动 → 实时更新显示 + 写回 edge 引擎 */
+static void on_thr_slider(lv_event_t * e)
+{
+    sensor_page_ctx_t * ctx = lv_event_get_user_data(e);
+    int idx = ctx->modal_idx;
+    if(idx < 0 || idx >= SENSOR_IDX_COUNT) return;
+    const sensor_phys_t * sp = &g_sensor_phys[idx];
+    int scale = (sp->dec >= 2) ? 100 : (sp->dec >= 1) ? 10 : 1;
+
+    /* 下限不可超上限, 上限不可低过下限 */
+    int lo_i = lv_slider_get_value(ctx->modal_lo_sl);
+    int hi_i = lv_slider_get_value(ctx->modal_hi_sl);
+    if(lo_i > hi_i) {
+        lv_obj_t * src = lv_event_get_target_obj(e);
+        if(src == ctx->modal_lo_sl) { lo_i = hi_i; lv_slider_set_value(ctx->modal_lo_sl, lo_i, LV_ANIM_OFF); }
+        else                        { hi_i = lo_i; lv_slider_set_value(ctx->modal_hi_sl, hi_i, LV_ANIM_OFF); }
+    }
+
+    float lo = (float)lo_i / (float)scale;
+    float hi = (float)hi_i / (float)scale;
+    edge_engine_set_warn((sensor_idx_t)idx, lo, hi);
+
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%.*f%s", sp->dec, lo, sp->unit);
+    lv_label_set_text(ctx->modal_lo_v, buf);
+    snprintf(buf, sizeof(buf), "%.*f%s", sp->dec, hi, sp->unit);
+    lv_label_set_text(ctx->modal_hi_v, buf);
 }

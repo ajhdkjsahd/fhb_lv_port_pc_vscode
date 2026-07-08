@@ -38,6 +38,18 @@ typedef struct {
  * 数值参考 sensor_page.c 的展示元数据 + mqtt_pub_demo.c 的模拟区间。 */
 extern const sensor_phys_t g_sensor_phys[SENSOR_IDX_COUNT];
 
+/* ===== 异常告警阈值 (用户可配置) =====
+ * 传感器页红绿显示 + 趋势页日报剔除计数共用此阈值。
+ * 每个传感器独立: warn_lo/warn_hi 定义正常范围(含), 超限→告警+计入剔除。
+ * UI 通过 edge_engine_get/set_warn() 读写。 */
+typedef struct {
+    float warn_lo;     /* 异常下限 */
+    float warn_hi;     /* 异常上限 */
+    bool  enabled;     /* 是否启用告警 */
+} sensor_warn_t;
+
+extern sensor_warn_t g_sensor_warn[SENSOR_IDX_COUNT];
+
 #ifdef __cplusplus
 }
 #endif

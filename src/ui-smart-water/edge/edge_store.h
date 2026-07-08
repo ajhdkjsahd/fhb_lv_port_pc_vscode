@@ -39,6 +39,10 @@ void store_compute_daily(daily_t out[SENSOR_IDX_COUNT]);
 bool store_load_analysis(edge_analysis_t * out);
 void store_save_analysis(const edge_analysis_t * in);
 
+/* 用户异常告警阈值持久化 (analysis/warn_thresholds.txt) */
+void store_load_warn(sensor_warn_t out[SENSOR_IDX_COUNT]);
+void store_save_warn(const sensor_warn_t in[SENSOR_IDX_COUNT]);
+
 #ifdef __cplusplus
 }
 #endif

@@ -31,7 +31,8 @@
 | **数据清洗** | 去重、物理量程过滤、速率突变检测，把传感器误采样的无效数据标记出来 | `edge_engine.c` → `classify()` |
 | **本地持久化** | 原始数据全部写入板载 eMMC 的 CSV 文件，掉电/断网不丢失 | `edge_store.c` → `store_append_raw()` |
 | **智能分析** | 每隔 60 秒跑一次最小二乘线性回归 + Pearson 相关性矩阵，预测 1 小时后的趋势 | `edge_analysis.c` |
-| **对外提供查询** | 给 LVGL 界面层提供快照（实时值）、历史曲线、分析报表三个只读接口 | `edge_engine.h` |
+| **异常阈值告警** | 每路传感器独立可配告警阈值（warn_lo/hi），超限计入日报剔除数；传感器页可实时调节并持久化 | `sensor_range.h` → `sensor_warn_t`, `edge_store.c` → `store_compute_daily()` |
+| **对外提供查询** | 给 LVGL 界面层提供快照（实时值）、历史曲线、分析报表、阈值读写四个接口 | `edge_engine.h` |
 
 ---
 
@@ -148,7 +149,8 @@ CSV 每行最后一列的那一个数字，标记本条数据的质量判定：
   │   ├── 2026-07-06.csv           ← 每天一个 CSV，append-only
   │   └── 2026-07-07.csv
   └── analysis/
-      └── latest.txt               ← 最新的分析缓存（回归 + 相关 + 日报）
+      ├── latest.txt               ← 最新的分析缓存（回归 + 相关 + 日报）
+      └── warn_thresholds.txt      ← 用户配置的异常告警阈值 (每路 lo/hi/enabled)
 ```
 
 ---
@@ -241,6 +243,43 @@ typedef enum {
 
 这些阈值是基于水产养殖场景的经验值。传感器类型不同（水产用 VS 空气用），阈值也不同——所以这个表是整个模块唯一需要"按场景定制"的地方。
 
+#### 异常告警阈值 (v2 新增)
+
+**`sensor_warn_t`** — 每路传感器独立的可配置告警阈值：
+
+```c
+typedef struct {
+    float warn_lo;     /* 异常下限 (低于此值 → 告警+计入剔除) */
+    float warn_hi;     /* 异常上限 (高于此值 → 告警+计入剔除) */
+    bool  enabled;     /* 是否启用告警 */
+} sensor_warn_t;
+
+extern sensor_warn_t g_sensor_warn[SENSOR_IDX_COUNT];
+```
+
+**默认值** (水产养殖参考):
+
+| 传感器 | warn_lo | warn_hi |
+|--------|:------:|:------:|
+| 温度 | 15.0 °C | 32.0 °C |
+| 湿度 | 30.0 % | 90.0 % |
+| 光照 | 10.0 % | 100.0 % |
+| 溶解氧 | 3.0 mg/L | 20.0 mg/L |
+| pH值 | 6.0 | 9.0 |
+| 氨氮 | 0.0 mg/L | 1.0 mg/L |
+
+**与物理量程的区别**:
+- `phys_min/phys_max` = 传感器硬件极限 (如温度 0~40°C)，超出=硬件故障，`classify()` 标记 RANGE
+- `warn_lo/warn_hi` = 养殖水质安全范围 (如温度 15~32°C)，超出=水质异常，计入日报剔除数 + 传感器页变红
+
+**读写 API**:
+```c
+bool edge_engine_get_warn(sensor_idx_t idx, float * lo, float * hi);
+void edge_engine_set_warn(sensor_idx_t idx, float lo, float hi);  /* 立即持久化 */
+```
+
+传感器页点卡片 logo → 弹窗拖 slider 调节 → 实时写回引擎 + 落盘 `warn_thresholds.txt`。重启自动加载。
+
 
 ### 2. edge_engine.c — 引擎核心
 
@@ -308,6 +347,9 @@ typedef enum {
 - 追加模式 (`fopen(..., "a")`)，绝不覆盖已有数据
 - 每 10 条 `fsync` 一次 → 最多丢 30 秒数据
 - 分析缓存用纯文本 (`analysis/latest.txt`)，sscanf 解析，不引入 JSON 库依赖
+- 告警阈值用纯文本 (`analysis/warn_thresholds.txt`), 格式 `warn <idx> <lo> <hi> <enabled>`, 启动加载 + set_warn 时即时落盘
+
+**日报剔除计数 (v2)**: `store_compute_daily()` 扫描 CSV 时对 flag=VALID 的样本额外检查每路值是否超出 `g_sensor_warn[i].warn_lo/hi`，超限也计入 `daily[i].reject`。与传感器页红绿判定用同一套阈值，保证语义一致。
 
 **文件名怎么生成**：
 
@@ -512,6 +554,18 @@ int edge_engine_get_history(sensor_idx_t idx, float * buf, int max);
  *   }
  */
 bool edge_engine_get_analysis(edge_analysis_t * out);
+
+/* ———④ 读写异常告警阈值 (v2 新增, 传感器页 + 趋势页共用) ———
+ * get: 返回 enabled 状态 (false=从未配置), lo/hi 写入传出指针
+ * set: 立即持久化到 analysis/warn_thresholds.txt, 下次重启自动加载
+ *
+ * 示例:
+ *   float lo, hi;
+ *   edge_engine_get_warn(SENSOR_IDX_TEMP, &lo, &hi);
+ *   edge_engine_set_warn(SENSOR_IDX_TEMP, 22.0f, 30.0f);
+ */
+bool edge_engine_get_warn(sensor_idx_t idx, float * lo, float * hi);
+void edge_engine_set_warn(sensor_idx_t idx, float lo, float hi);
 ```
 
 ### 分析结果结构体
@@ -652,13 +706,13 @@ int main() {
 
 ```
 src/ui-smart-water/edge/
-├── sensor_range.h       (44 行)  共享枚举 + 物理量程表
-├── edge_engine.h        (101 行) 公共 API + 数据结构定义
-├── edge_engine.c        (416 行) 引擎核心: worker 线程 + 队列 + 清洗 + 快照/环 + 周期分析
-├── edge_store.h         (45 行)  存储层头文件
-├── edge_store.c         (277 行) 存储层: CSV 追加/回读/全量统计, 分析缓存读写
-├── edge_analysis.h      (27 行)  数学分析头文件
-├── edge_analysis.c      (66 行)  Pearson 相关 + 最小二乘回归 (纯数学, 可单测)
+├── sensor_range.h       (~55 行) 共享枚举 + 物理量程表 + 异常告警阈值结构体
+├── edge_engine.h        (~105 行) 公共 API + 数据结构定义 (含 get/set_warn)
+├── edge_engine.c        (~430 行) 引擎核心: worker + 队列 + 清洗 + 快照/环 + 周期分析 + 阈值默认值
+├── edge_store.h         (~48 行)  存储层头文件 (含 warn 持久化声明)
+├── edge_store.c         (~340 行) 存储层: CSV + 分析缓存 + 告警阈值持久化 + 日报剔除含异常阈值检查
+├── edge_analysis.h      (27 行)   数学分析头文件
+├── edge_analysis.c      (66 行)   Pearson 相关 + 最小二乘回归 (纯数学, 可单测)
 └── README.md            (本文档)
 ```
 

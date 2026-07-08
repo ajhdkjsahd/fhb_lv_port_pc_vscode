@@ -26,6 +26,16 @@ const sensor_phys_t g_sensor_phys[SENSOR_IDX_COUNT] = {
     [SENSOR_IDX_NH3N]  = { "氨氮",   "mg/L", 0, 5,    0.5f,  2 },
 };
 
+/* ===== 异常告警阈值 (可配置, 传感器页红绿判定 + 日报剔除计数共用) ===== */
+sensor_warn_t g_sensor_warn[SENSOR_IDX_COUNT] = {
+    [SENSOR_IDX_TEMP]  = { 15.0f, 32.0f, true },
+    [SENSOR_IDX_HUMI]  = { 30.0f, 90.0f, true },
+    [SENSOR_IDX_LIGHT] = { 10.0f, 100.0f, true },
+    [SENSOR_IDX_DO]    = { 3.0f,  20.0f, true },
+    [SENSOR_IDX_PH]    = { 6.0f,  9.0f,  true },
+    [SENSOR_IDX_NH3N]  = { 0.0f,  1.0f,  true },
+};
+
 /* ===== 互斥可移植宏 =====
  *  Linux: pthread_mutex_t; PC: 无 pthread, 用 int 占位(锁操作为空)。 */
 #ifdef __linux__
@@ -264,6 +274,9 @@ bool edge_engine_init(void)
         printf("[edge] loaded analysis cache (ts=%u)\n", (unsigned)a.ts);
     }
 
+    /* 加载用户配置的告警阈值 (不存在则用默认值) */
+    store_load_warn(g_sensor_warn);
+
 #ifdef __linux__
     if(pthread_create(&g_worker, NULL, worker_main, NULL) != 0) {
         printf("[edge] worker create failed → inline mode\n");
@@ -288,9 +301,10 @@ void edge_engine_deinit(void)
         pthread_mutex_unlock(&g_q_mtx);
     }
 #endif
-    /* 落最后一次分析 */
+    /* 落最后一次分析 + 用户阈值 */
     edge_analysis_t a;
     if(edge_engine_get_analysis(&a)) store_save_analysis(&a);
+    store_save_warn(g_sensor_warn);
 }
 
 void edge_engine_push(const raw_sample_t * s)
@@ -346,6 +360,25 @@ bool edge_engine_get_analysis(edge_analysis_t * out)
     if(ok) *out = g_analysis;
     MTX_UNLOCK(g_analysis_mtx);
     return ok;
+}
+
+/* ===== 异常告警阈值读写 (UI/传感器页 ↔ edge 共享) ===== */
+bool edge_engine_get_warn(sensor_idx_t idx, float * lo, float * hi)
+{
+    if(idx < 0 || idx >= SENSOR_IDX_COUNT) return false;
+    if(lo) *lo = g_sensor_warn[idx].warn_lo;
+    if(hi) *hi = g_sensor_warn[idx].warn_hi;
+    return g_sensor_warn[idx].enabled;
+}
+
+void edge_engine_set_warn(sensor_idx_t idx, float lo, float hi)
+{
+    if(idx < 0 || idx >= SENSOR_IDX_COUNT) return;
+    if(lo > hi) { float t = lo; lo = hi; hi = t; }
+    g_sensor_warn[idx].warn_lo = lo;
+    g_sensor_warn[idx].warn_hi = hi;
+    g_sensor_warn[idx].enabled  = true;
+    store_save_warn(g_sensor_warn);   /* 立即持久化 */
 }
 
 /* ===== PC 模拟喂料 (复刻 mqtt_pub_demo 随机逻辑) ===== */
